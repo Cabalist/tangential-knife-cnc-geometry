@@ -13,7 +13,7 @@ at import time due to this possible mutability.
 """
 
 # pylint: disable=global-statement
-# ruff: noqa: PLW0603
+# ruff: file-ignore[global-statement]
 from __future__ import annotations
 
 import math
@@ -132,7 +132,7 @@ def float_eq3(a: float, b: float, tolerance: float | None = None) -> bool:
     # Avoid function calls to max/abs
     aa = a if a >= 0 else -a
     bb = b if b >= 0 else -b
-    ab_max = aa if aa > bb else bb  # noqa: FURB136
+    ab_max = aa if aa > bb else bb  # ruff: ignore[if-expr-min-max]
 
     if ab_max > 1.0:
         tolerance *= ab_max  # scale for larger numbers
@@ -151,7 +151,7 @@ def angle_eq(a: float, b: float, tolerance: float | None = None) -> bool:
     # Avoid function calls to max/abs
     aa = a if a >= 0 else -a
     bb = b if b >= 0 else -b
-    ab_max = aa if aa > bb else bb  # noqa: FURB136
+    ab_max = aa if aa > bb else bb  # ruff: ignore[if-expr-min-max]
 
     if ab_max > 1.0:
         tolerance *= ab_max  # scale for larger numbers

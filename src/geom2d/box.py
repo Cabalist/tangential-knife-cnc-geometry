@@ -148,7 +148,7 @@ class Box(tuple[P, P]):
 
     @property
     def center(self) -> P:
-        """Return the center point of this rectangle."""
+        """Center point of this rectangle."""
         return self.p1 + ((self.p2 - self.p1) / 2)
 
     @property
@@ -352,8 +352,8 @@ class Box(tuple[P, P]):
 
 # pylint: disable=invalid-name
 def _lbclip_helper(
-    nQ: float,  # noqa: N803
-    nP: float,  # noqa: N803
+    nQ: float,  # ruff: ignore[invalid-argument-name]
+    nP: float,  # ruff: ignore[invalid-argument-name]
     u_minmax: list[float],
 ) -> bool:
     """Lian-Barsky helper."""

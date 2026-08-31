@@ -199,7 +199,7 @@ class VoronoiDiagram:
         if right_edge:
             p2 = self._vertices[right_edge.sitenum]
 
-        #assert p1 or p2
+        # assert p1 or p2
         # In some pathological cases neither p1 nor p2 can be calculated.
         # TODO: look into why this is...
         if p1 and p2:
@@ -394,7 +394,7 @@ class VoronoiDiagram:
             priority_queue.insert(bisector, site, bot.distance(site))
 
 
-class _Site:  # noqa: PLW1641 # no __hash__
+class _Site:  # ruff: ignore[eq-without-hash] # no __hash__
     """Enumerated input points."""
 
     x: float

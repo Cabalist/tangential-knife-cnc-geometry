@@ -430,7 +430,7 @@ def all_points_inside(
     return all(point_inside(polygon, p, edge_ok=edge_ok) for p in points)
 
 
-def intersect_line(  # noqa: PLR0912 pylint: disable=too-many-branches
+def intersect_line(  # ruff: ignore[too-many-branches] pylint: disable=too-many-branches
     polygon: Sequence[TPoint], lineseg: TLine, edge_ok: bool = False
 ) -> list[Line]:
     """Compute the intersection(s) of a polygon/polyline and a line segment.
@@ -887,3 +887,29 @@ def is_inside(polygon1: Sequence[TPoint], polygon2: Iterable[TPoint]) -> bool:
 def intersects(polygon1: Sequence[TPoint], polygon2: Iterable[TPoint]) -> bool:
     """Does polygon1 intersect polygon2?"""
     return any(point_inside(polygon1, p) for p in polygon2)
+
+
+def rect_midpoints(
+    rect: Sequence[TPoint], midpoint_mu: float = 0.5
+) -> tuple[TPoint, TPoint, TPoint, TPoint]:
+    """The midpoints of the rectangle/parallelogram edges.
+
+    Args:
+        rect: A sequence of four points.
+        midpoint_mu: The ratio of distances between midpoint and endpoints
+            where 0 < midpoint_mu < 1.0. Default is 0.5 (actual midpoint).
+
+    Returns:
+        A tuple of four point tuples.
+    """
+    p1, p2, _p3, p4 = rect
+    dx1 = (p2[0] - p1[0]) * midpoint_mu
+    dy1 = (p2[1] - p1[1]) * midpoint_mu
+    dx2 = (p4[0] - p1[0]) * midpoint_mu
+    dy2 = (p4[1] - p1[1]) * midpoint_mu
+    return (
+        P(p1[0] + dx1, p1[1] + dy1),
+        P(p2[0] + dx2, p2[1] + dy2),
+        P(p4[0] + dx1, p4[1] + dy1),
+        P(p1[0] + dx2, p1[1] + dy2),
+    )

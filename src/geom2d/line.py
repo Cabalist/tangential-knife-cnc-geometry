@@ -19,7 +19,7 @@ TLine = Sequence[Sequence[float]]  # Generic input type
 
 
 # namedtuple('Line', 'p1, p2')):
-class Line(tuple[P, P]):  # noqa: SLOT001
+class Line(tuple[P, P]):  # ruff: ignore[no-slots-in-tuple-subclass]
     """Two dimensional immutable line segment defined by two points.
 
     Args:
@@ -333,7 +333,7 @@ class Line(tuple[P, P]):  # noqa: SLOT001
         #                 or mub < -const.EPSILON or mub > 1.0 + const.EPSILON):
         mu_min = -const.EPSILON
         mu_max = 1.0 + const.EPSILON
-        if (seg_a and (mu_a < mu_min or mu_a > mu_max)) or (  # noqa: PLR0916
+        if (seg_a and (mu_a < mu_min or mu_a > mu_max)) or (  # ruff: ignore[too-many-boolean-expressions]
             seg_b and (mu_b < mu_min or mu_b > mu_max)
         ):
             # The intersection lies outside the line segments
@@ -452,7 +452,8 @@ class Line(tuple[P, P]):  # noqa: SLOT001
             A new Line.
         """
         length = self.length()
-        if length == 0.0:  # const.is_zero(length):
+        # if length == 0.0:  # const.is_zero(length):
+        if const.is_zero(length):
             raise ValueError("Cannot extend line of zero length.")
         #         x1, y1 = self[0]
         #         x2, y2 = self[1]

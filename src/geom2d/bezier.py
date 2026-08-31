@@ -603,7 +603,7 @@ class CubicBezier(tuple[P, P, P, P]):
 
         return [self.point_at(r) for r in roots if 0 <= r <= 1]
 
-    def biarc_approximation(  # noqa: PLR0911 pylint: disable=too-many-return-statements
+    def biarc_approximation(  # ruff: ignore[too-many-return-statements] pylint: disable=too-many-return-statements
         self,
         tolerance: float = 0.001,
         max_depth: float = 4,
@@ -701,7 +701,7 @@ class CubicBezier(tuple[P, P, P, P]):
         arc2 = Arc.from_two_points_and_tangent(self.p2, c2, pjoint, reverse=True)
         assert arc1
         assert arc2
-        if const.DEBUG:  # noqa: SIM102
+        if const.DEBUG:  # ruff: ignore[collapsible-if]
             if not const.angle_eq(arc1.end_tangent_angle(), arc2.start_tangent_angle()):
                 debug.debug(
                     f"a1={arc1.end_tangent_angle()}, a2={arc2.start_tangent_angle()}"

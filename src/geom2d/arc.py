@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 
 # TODO: Refactor to make p2 the last element of the tuple
-class Arc(tuple[P, P, float, float, P]):  # noqa: SLOT001
+class Arc(tuple[P, P, float, float, P]):  # ruff: ignore[no-slots-in-tuple-subclass]
     """Two dimensional immutable circular arc segment.
 
     Args:

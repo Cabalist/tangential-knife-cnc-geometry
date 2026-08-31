@@ -24,19 +24,19 @@ def set_svg_context(context: SVGContext) -> None:
 
     The SVGContext will be used for debug output by draw...() methods.
     """
-    global svg_context  # noqa: PLW0603 pylint: disable=global-statement
+    global svg_context  # ruff: ignore[global-statement] pylint: disable=global-statement
     svg_context = context
     if context is not None:
         # global const.DEBUG
         const.DEBUG = True
 
 
-def debug(*args) -> None:  # noqa: ANN002
+def debug(*args) -> None:  # ruff: ignore[missing-type-args]
     """Just write a message to stderr.
 
     Dumb but useful when debugging in Inkscape.
     """
-    print(*args, file=sys.stderr)  # noqa: T201
+    print(*args, file=sys.stderr)  # ruff: ignore[print]
 
 
 def draw_point(
