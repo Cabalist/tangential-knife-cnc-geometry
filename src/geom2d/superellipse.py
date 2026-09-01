@@ -6,6 +6,8 @@ Note: This was partly built using ChatGPT/Codex 5.6-Sol-high
 
 import math
 from collections.abc import Sequence
+from operator import itemgetter
+from typing import TypeAlias
 
 from . import TPoint
 from .polygon import rect_midpoints
@@ -17,6 +19,17 @@ _EPSILON = 1.0e-9
 _MIN_CURVES = 4
 _MAX_CURVES = 40
 
+# Shape range
+_MIN_K = -3.0
+_MAX_K = 3.0
+
+
+# Cubic Bezier curve type
+TCubicBezier: TypeAlias = tuple[TPoint, TPoint, TPoint, TPoint]
+
+# Quadratic Bezier curve type
+TQuadBezier: TypeAlias = tuple[TPoint, TPoint, TPoint]
+
 
 def _is_zero(n: float) -> bool:
     return abs(n) < _EPSILON
@@ -26,94 +39,14 @@ def _is_gt(a: float, b: float) -> bool:
     return a > (b - _EPSILON)
 
 
-def _lame_point(theta: float, n: float) -> TPoint:
-    """First-quadrant Lamé curve."""
-    # ------------------------------------------------------------
-    # Standard superellipse parameterization:
-    #
-    #     x = cos(theta) ^ (2/n)
-    #     y = sin(theta) ^ (2/n)
-    #
-    #     0 <= theta <= pi/2
-    #
-    # This automatically distributes points reasonably well:
-    # for square-ish curves they accumulate toward the corner,
-    # while for strongly concave curves they follow the long
-    # scooped portions near the axes.
-    # ------------------------------------------------------------
-
-    # Clamp to axes
-    if _is_zero(theta):
-        return (1.0, 0.0)
-    if _is_gt(theta, _HALF_PI):
-        return (0.0, 1.0)
-
-    exp = 2.0 / n
-    return math.cos(theta) ** exp, math.sin(theta) ** exp
-
-
-def _lame_tangent(theta: float, n: float) -> TPoint:
-    """Exact tangent DIRECTION to the first-quadrant Lamé curve."""
-    # Differentiating
-    #
-    #     x = cos(theta)^e
-    #     y = sin(theta)^e
-    #
-    # gives, ignoring the common factor e:
-    #
-    #     dx = -sin(theta) cos(theta)^(e-1)
-    #     dy =  cos(theta) sin(theta)^(e-1)
-    #
-    # At the axes the limiting tangent depends on whether n is
-    # above or below 1.
-    #
-    if _is_zero(theta):
-        if n > 1.0:
-            # Convex curve: vertical tangent.
-            return (0.0, 1.0)
-        # Concave curve: horizontal tangent toward center.
-        return (-1.0, 0.0)
-
-    if _is_gt(theta, _HALF_PI):
-        if n > 1.0:
-            # Convex curve: horizontal tangent.
-            return (-1.0, 0.0)
-        # Concave curve: vertical tangent toward endpoint.
-        # This is the one-sided tangent approaching the
-        # top axis from the first quadrant.
-        return (0.0, 1.0)
-
-    c = math.cos(theta)
-    s = math.sin(theta)
-
-    exp = 2.0 / n - 1.0
-    tx = -s * (c**exp)
-    ty = c * (s**exp)
-
-    # Convert to unit vector
-    length = math.hypot(tx, ty)
-    if _is_zero(length):
-        raise RuntimeError("Zero-length tangent")
-    return (tx / length, ty / length)
-
-
-def _tangent_intersection(p0: TPoint, t0: TPoint, p1: TPoint, t1: TPoint) -> TPoint:
-    """Intersection of two tangent lines."""
-
-    def _cross(a: TPoint, b: TPoint) -> float:
-        return a[0] * b[1] - a[1] * b[0]
-
-    denominator = _cross(t0, t1)
-    if _is_zero(denominator):
-        return p0
-
-    delta = (p1[0] - p0[0], p1[1] - p0[1])
-    s = _cross(delta, t1) / denominator
-    return (p0[0] + t0[0] * s, p0[1] + t0[1] * s)
-
-
 def rhombus_superellipse(
-    points: Sequence[TPoint], k: float, num_curves: int = 16
+    points: Sequence[TPoint],
+    k: float,
+    num_curves: int = 16,
+    scale: float = 1.0,
+    use_vertice_endpoints: bool = False,
+    fit_inside: bool = True,
+    use_bezier_max: bool = True,
 ) -> list[tuple[TPoint, TPoint, TPoint, TPoint]]:
     """Approximate a superellipse inscribed in a rhombus/parallelogram.
 
@@ -131,6 +64,12 @@ def rhombus_superellipse(
 
         num_curves: Total number of Bezier segments. Must be a multiple of 4.
             The default is 16.
+        scale: Scale superellipse.
+        use_vertice_endpoints: Use vertices as quadrant curve endpoints
+            instead of midpoints.
+        fit_inside: Constrain convex superellipse within rhombus when
+            `use_vertice_endpoints` is True.
+        use_bezier_max: Use the exact Bezier maximum for fitting.
 
     Returns:
         List of (P0, C1, C2, P1) Cubic Bezier segments.
@@ -142,61 +81,42 @@ def rhombus_superellipse(
     num_curves = (num_curves // 4) * 4
     num_curves = max(min(num_curves, _MAX_CURVES), _MIN_CURVES)
 
+    # Clamp K to reasonable limits.
+    k = max(min(k, _MAX_K), _MIN_K)
+
     # This would be a simple rectangle of four straight line Beziers
     # connected at rhombus edge midpoints.
     if _is_zero(k):
-        mp1, mp2, mp3, mp4 = rect_midpoints(points)
+        if use_vertice_endpoints:
+            p1, p2, p3, p4 = points
+        else:
+            p1, p2, p3, p4 = rect_midpoints(points)
         return [
-            (mp1, mp1, mp2, mp2),
-            (mp2, mp2, mp3, mp3),
-            (mp3, mp3, mp4, mp4),
-            (mp4, mp4, mp1, mp1),
+            (p1, p1, p2, p2),
+            (p2, p2, p3, p3),
+            (p3, p3, p4, p4),
+            (p4, p4, p1, p1),
         ]
 
+    # Lamé equation exponent.
+    # See: https://en.wikipedia.org/wiki/Superellipse
     n = 2.0**k
 
-    # ------------------------------------------------------------
-    # First-quadrant segments.
-    #
-    # Each segment is initially treated as the quadratic:
-    #
-    #          P0, Q, P1
-    #
-    # where Q is the intersection of the endpoint tangents.
-    #
-    # Degree elevation converts it EXACTLY to cubic:
-    #
-    #     C1 = 1/3 P0 + 2/3 Q
-    #     C2 = 2/3 Q  + 1/3 P1
-    #
-    # Thus the returned cubic has the geometry of a quadratic and
-    # cannot acquire an S-shaped inflection.
-    # ------------------------------------------------------------
-
-    base_curves = []
+    # Bezier curves approximating Lamé curve for one quadrant
+    base_curves: list[TQuadBezier] = []
 
     curves_per_quadrant = num_curves // 4
     step = _HALF_PI / curves_per_quadrant
 
+    # Create normalized curves for one quadrant
     for i in range(curves_per_quadrant):
         theta = i * step
         p0 = _lame_point(theta, n)
         p1 = _lame_point(theta + step, n)
-        t0 = _lame_tangent(theta, n)
-        t1 = _lame_tangent(theta + step, n)
-        qx, qy = _tangent_intersection(p0, t0, p1, t1)
-
-        # Exact elevation of quadratic P0-Q-P1 to cubic P0-C1-C2-P1.
-        c1 = (
-            (p0[0] + 2.0 * qx) / 3.0,
-            (p0[1] + 2.0 * qy) / 3.0,
-        )
-        c2 = (
-            (p1[0] + 2.0 * qx) / 3.0,
-            (p1[1] + 2.0 * qy) / 3.0,
-        )
-
-        base_curves.append((p0, c1, c2, p1))
+        t0 = _lame_tangent(p0, n)
+        t1 = _lame_tangent(p1, n)
+        q = _tangent_intersection(p0, t0, p1, t1)
+        base_curves.append((p0, q, p1))
 
     # ------------------------------------------------------------
     # Affine map from normalized square to rhombus
@@ -207,45 +127,190 @@ def rhombus_superellipse(
         0.25 * sum(y for _x, y in points),
     )
 
-    ux = 0.5 * (points[0][0] - points[1][0])
-    uy = 0.5 * (points[0][1] - points[1][1])
-
-    vx = 0.5 * (points[0][0] - points[3][0])
-    vy = 0.5 * (points[0][1] - points[3][1])
+    if use_vertice_endpoints:
+        if n > 1 and fit_inside:
+            scale = (
+                _fit_scale_bezier(base_curves)[0]
+                if use_bezier_max
+                else _fit_scale_lame(n)
+            )
+        ux = points[0][0] - center[0]
+        uy = points[0][1] - center[1]
+        vx = points[1][0] - center[0]
+        vy = points[1][1] - center[1]
+    else:
+        # Use midpoints
+        ux = 0.5 * (points[0][0] - points[1][0])
+        uy = 0.5 * (points[0][1] - points[1][1])
+        vx = 0.5 * (points[0][0] - points[3][0])
+        vy = 0.5 * (points[0][1] - points[3][1])
 
     def transform(point: TPoint, quadrant: int) -> TPoint:
         x, y = point
-        # First rotate to quadrant
+        # Rotate normalized point to quadrant
         if quadrant == 1:
             x, y = -y, x
         elif quadrant == 2:
             x, y = -x, -y
         elif quadrant == 3:
             x, y = y, -x
+        x *= scale
+        y *= scale
         # Affine transform to rhombus
         return (
             center[0] + x * ux + y * vx,
             center[1] + x * uy + y * vy,
         )
 
-    # ------------------------------------------------------------
-    # Generate all four quadrants and transform into the rhombus.
-    # ------------------------------------------------------------
-
-    curves: list[tuple[TPoint, TPoint, TPoint, TPoint]] = []
+    cubic_curves: list[TCubicBezier] = []
 
     for quadrant in range(4):
         for curve in base_curves:
-            p0, c1, c2, p1 = curve
-            curves.append((
-                transform(p0, quadrant),
-                transform(c1, quadrant),
-                transform(c2, quadrant),
-                transform(p1, quadrant),
-            ))
-            # transformed: tuple[TPoint, TPoint, TPoint, TPoint] = tuple(
-            #    transform(point, quadrant) for point in curve
-            # )
-            # curves.append(transformed)
+            p0, q, p1 = curve
+            p0 = transform(p0, quadrant)
+            q = transform(q, quadrant)
+            p1 = transform(p1, quadrant)
+            cubic_curves.append(_quadratic_to_cubic(p0, q, p1))
 
-    return curves
+    return cubic_curves
+
+
+def _quadratic_to_cubic(p0: TPoint, q: TPoint, p1: TPoint) -> TCubicBezier:
+    """Elevate Bezier from quadratic to cubic."""
+    c1 = (
+        (p0[0] + 2.0 * q[0]) / 3.0,
+        (p0[1] + 2.0 * q[1]) / 3.0,
+    )
+    c2 = (
+        (p1[0] + 2.0 * q[0]) / 3.0,
+        (p1[1] + 2.0 * q[1]) / 3.0,
+    )
+    return p0, c1, c2, p1
+
+
+def _lame_point(theta: float, n: float) -> TPoint:
+    """First-quadrant Lamé curve."""
+    # Clamp to axes
+    if _is_zero(theta):
+        return (1.0, 0.0)
+    if _is_gt(theta, _HALF_PI):
+        return (0.0, 1.0)
+
+    exp = 2.0 / n
+    return (
+        math.cos(theta) ** exp,
+        math.sin(theta) ** exp,
+    )
+
+
+def _lame_tangent(point: TPoint, n: float) -> TPoint:
+    """Tangent direction to the normalized Lamé curve."""
+    # For
+    #
+    #     F(x,y) = x^n + y^n - 1
+    #
+    # the gradient is normal to the curve, so a tangent direction
+    # in the first quadrant is:
+    #
+    #     T = (-y^(n-1), x^(n-1))
+    #
+    x, y = point
+    assert x > -_EPSILON
+    assert y > -_EPSILON
+    if _is_zero(y):
+        if n > 1.0:
+            # Convex curve: vertical tangent.
+            return (0.0, 1.0)
+        # Concave curve: horizontal tangent toward center.
+        return (-1.0, 0.0)
+
+    if _is_zero(x):
+        if n > 1.0:
+            # Convex curve: horizontal tangent.
+            return (-1.0, 0.0)
+        # Concave curve: vertical tangent.
+        return (0.0, 1.0)
+
+    return (
+        -(y ** (n - 1.0)),
+        x ** (n - 1.0),
+    )
+
+
+def _tangent_intersection(p0: TPoint, t0: TPoint, p1: TPoint, t1: TPoint) -> TPoint:
+    """Intersection of tangent lines (quadratic Bezier control point)."""
+
+    def _cross(a: TPoint, b: TPoint) -> float:
+        return a[0] * b[1] - a[1] * b[0]
+
+    denominator = _cross(t0, t1)
+    if _is_zero(denominator):  # n == 1, shouldn't happen
+        raise AssertionError("Degenerate curve.")
+        # return (
+        #    0.5 * (p0[0] + p1[0]),
+        #    0.5 * (p0[1] + p1[1]),
+        # )
+
+    delta = (p1[0] - p0[0], p1[1] - p0[1])
+    s = _cross(delta, t1) / denominator
+    return (
+        p0[0] + s * t0[0],
+        p0[1] + s * t0[1],
+    )
+
+
+def _fit_scale_lame(n: float) -> float:
+    """Find the quadrant maximum using ideal Lamé curve."""
+    # Exact analytical scaling of the ideal Lamé curve.
+    # Maximum x+y occurs at x=y=2^(-1/n), therefore:
+    #     max(x+y) = 2^(1 - 1/n)
+    # and
+    #     scale = 2^(1/n - 1)
+    return float(2.0 ** (1.0 / n - 1.0))
+
+
+def _fit_scale_bezier(
+    base_curves: list[TQuadBezier],
+) -> tuple[float, int, float, TPoint]:
+    """Find the maximum extent of the curves in the base quadrant."""
+    extent, t, p, i = max(
+        ((*_bezier_max(curve), i) for i, curve in enumerate(base_curves)),
+        key=itemgetter(0),
+    )
+    scale = 1.0 / extent
+    return scale, i, t, p
+
+
+def _bezier_max(curve: TQuadBezier) -> tuple[float, float, TPoint]:
+    """Get x+y maximum of quadratic Bezier curve."""
+    p0, q, p1 = curve
+
+    a = p0[0] + p0[1]
+    b = q[0] + q[1]
+    c = p1[0] + p1[1]
+
+    denominator = a - 2.0 * b + c
+    if not _is_zero(denominator):
+        t = (a - b) / denominator
+        if 0.0 < t < 1.0:
+            point = _bezier_point(p0, q, p1, t)
+            extent = point[0] + point[1]
+            if extent > a and extent > c:
+                return extent, t, point
+
+    if a > c:
+        return a, 0.0, p0
+    return c, 1.0, p1
+
+
+def _bezier_point(p0: TPoint, q: TPoint, p1: TPoint, t: float) -> TPoint:
+    """Point on quadratic Bezier curve at `t`."""
+    s = 1.0 - t
+    a = s * s
+    b = 2.0 * s * t
+    c = t * t
+
+    return (
+        a * p0[0] + b * q[0] + c * p1[0],
+        a * p0[1] + b * q[1] + c * p1[1],
+    )
