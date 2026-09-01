@@ -4,6 +4,7 @@ import sys
 
 import numpy as np
 import pytest
+
 from geom2d import const
 from geom2d.const import (
     float_eq,
@@ -13,7 +14,7 @@ from geom2d.const import (
 EPSILONS = [1 / (10**p) for p in range(3, 9)]
 
 
-@pytest.mark.parametrize('epsilon', EPSILONS)
+@pytest.mark.parametrize("epsilon", EPSILONS)
 def test_float_eq(epsilon: float) -> None:
     """Test geom2d.const.float_eq."""
     const.set_epsilon(epsilon)
@@ -35,21 +36,16 @@ def test_float_eq(epsilon: float) -> None:
         _float_eq_t(n)
 
     # And a bunch of random floats
-    for n in np.random.default_rng().uniform(
-        -const.MAX_XY, const.MAX_XY, 10000
-    ):
+    for n in np.random.default_rng().uniform(-const.MAX_XY, const.MAX_XY, 10000):
         _float_eq_t(n)
 
 
 def _float_eq_t(n: float) -> None:
     assert float_eq(n, n)
     if abs(n) < 1:
-        assert float_eq(
-            n, n + (const.EPSILON - const.EPSILON2)
-        )  # (n * const.EPSILON))
+        assert float_eq(n, n + (const.EPSILON - const.EPSILON2))  # (n * const.EPSILON))
         assert not float_eq(n, n + (const.EPSILON + const.EPSILON / 10))
     else:
         scaled_epsilon = abs(n) * const.EPSILON
         assert float_eq(n, n + scaled_epsilon / 10)
         assert not float_eq(n, n + scaled_epsilon + scaled_epsilon / 10)
-

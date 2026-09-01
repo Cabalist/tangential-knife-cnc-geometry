@@ -35,34 +35,34 @@ POLY2 = ((2, 2), (4, 2), (5, 1), (6, 4), (4, 5), (1, 4))
 POLY2_AREA = 11.5
 
 POLY3 = (
-    (5,2),
-    (6,3),
-    (6,4),
-    (4,5),
-    (3,4),
-    (3,2),
-    (2,2),
-    (2,4),
-    (3,6),
-    (6,6),
-    (7,5),
-    (7,4),
-    (6,2),
+    (5, 2),
+    (6, 3),
+    (6, 4),
+    (4, 5),
+    (3, 4),
+    (3, 2),
+    (2, 2),
+    (2, 4),
+    (3, 6),
+    (6, 6),
+    (7, 5),
+    (7, 4),
+    (6, 2),
 )
 POLY4 = (
-    (5,2),
-    (5,0),
-    (4,0),
-    (4,1),
-    (3,1),
-    (3,2),
-    (2,2),
-    (2,4),
-    (3,6),
-    (6,6),
-    (7,5),
-    (7,4),
-    (6,2),
+    (5, 2),
+    (5, 0),
+    (4, 0),
+    (4, 1),
+    (3, 1),
+    (3, 2),
+    (2, 2),
+    (2, 4),
+    (3, 6),
+    (6, 6),
+    (7, 5),
+    (7, 4),
+    (6, 2),
 )
 POLY4_AREA = -20.5
 
@@ -85,13 +85,15 @@ SIMPOLY1 = [
 ]
 
 LINE = [(1.6504, 1.8223), (5.2148, 0.8864)]
-STROKE_TO_PATH = [[
-    P(5.151309919, 0.644596341),
-    P(5.278290081, 1.128203659),
-    P(1.713890081, 2.064103659),
-    P(1.586909919, 1.580496341),
-    P(5.151309919, 0.644596341),
-]]
+STROKE_TO_PATH = [
+    [
+        P(5.151309919, 0.644596341),
+        P(5.278290081, 1.128203659),
+        P(1.713890081, 2.064103659),
+        P(1.586909919, 1.580496341),
+        P(5.151309919, 0.644596341),
+    ]
+]
 
 
 def test_polygon_turn() -> None:
@@ -100,6 +102,7 @@ def test_polygon_turn() -> None:
     assert polygon.turn((2, 2), (4, 2), (8, 2)) == 0
     assert polygon.turn((8, 3), (2, 4), (1, 1)) == polygon.TURN_LEFT
 
+
 def test_polygon_winding() -> None:
     assert polygon.winding(POLY3) == polygon.CW
     assert polygon.winding(POLY3, close=False) == polygon.CW
@@ -107,12 +110,15 @@ def test_polygon_winding() -> None:
     assert polygon.winding(POLY4) == polygon.CW
     assert polygon.winding(reversed(POLY4)) == polygon.CCW
 
+
 def test_polygon_area() -> None:
     """Test polygon.area function."""
     assert const.float_eq(POLY1_AREA, polygon.area(POLY1), tolerance=TOLERANCE)
     assert const.float_eq(POLY1_AREA, polygon.area(POLY1[:-1]), tolerance=TOLERANCE)
 
-    assert const.float_eq(-POLY1_AREA, polygon.area(reversed(POLY1)), tolerance=TOLERANCE)
+    assert const.float_eq(
+        -POLY1_AREA, polygon.area(reversed(POLY1)), tolerance=TOLERANCE
+    )
 
     assert polygon.area(POLY2) == POLY2_AREA
     assert polygon.area(POLY4) == POLY4_AREA

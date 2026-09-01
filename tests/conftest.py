@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import geom2d
 import pytest
 
+import geom2d
 
-@pytest.fixture(scope='session', autouse=True)
+
+@pytest.fixture(scope="session", autouse=True)
 def _initialize() -> None:
     geom2d.set_epsilon(1e-8)

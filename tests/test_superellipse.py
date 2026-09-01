@@ -7,6 +7,7 @@ import pathlib
 
 from geom2d.superellipse import rhombus_superellipse
 
+
 def _svg_path_from_curves(curves: list[tuple]) -> str:
     """Convert the four cubic Bezier curves into one closed SVG path."""
     start = curves[0][0]
@@ -25,11 +26,12 @@ def _svg_path_from_curves(curves: list[tuple]) -> str:
     return " ".join(parts)
 
 
-def _write_test_svg(filename: str = "test3.svg") -> None:
+def _write_test_svg(filename: str = "superellipse.svg") -> None:
     # A deliberately skewed/rotated rhombus.
     base_rhombus = [(30, 20), (220, 65), (250, 225), (60, 180)]
 
     # Negative, zero, circular, and increasingly square-ish cases.
+    # Concave to convex.
     k_values = [-3, -2, -1, -0.5, 0, 0.5, 1, 2, 3]
 
     cell_width = 300
@@ -57,13 +59,13 @@ def _write_test_svg(filename: str = "test3.svg") -> None:
         .rhombus {
             fill: none;
             stroke: #2bb673;
-            stroke-width: 2;
+            stroke-width: 1;
         }
 
         .curve {
             fill: none;
             stroke: #087bea;
-            stroke-width: 3;
+            stroke-width: 1;
         }
 
         .midpoint {
@@ -92,7 +94,9 @@ def _write_test_svg(filename: str = "test3.svg") -> None:
         # translate rhombus
         rhombus = [(x + ox, y + oy) for x, y in base_rhombus]
 
-        curves = rhombus_superellipse(rhombus, k)
+        curves = rhombus_superellipse(
+            rhombus, k
+        )  # , use_vertice_endpoints=True, fit_inside=True, use_bezier_max=True)
 
         path = _svg_path_from_curves(curves)
 
@@ -116,7 +120,7 @@ def _write_test_svg(filename: str = "test3.svg") -> None:
             f'<path class="curve" d="{path}" />'
         )
 
-        # Draw midpoint and control-point diagnostics.
+        # Draw midpoint and control-points
         #        for start, c1, c2, end in curves:
         #            svg.append(
         #                f'<line class="control-line" '
@@ -159,7 +163,7 @@ def _write_test_svg(filename: str = "test3.svg") -> None:
 
     pathlib.Path(filename).write_text("\n".join(svg), encoding="utf-8")
 
-    print(f"Wrote {filename}")  # ruff: ignore[print]
+    print(f"Wrote {filename}")
 
 
 if __name__ == "__main__":

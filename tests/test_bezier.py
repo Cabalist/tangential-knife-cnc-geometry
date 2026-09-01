@@ -5,10 +5,11 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
-import geom2d
-import geom2d.const
 import numpy as np
 import pytest
+
+import geom2d
+import geom2d.const
 from geom2d import bezier
 
 if TYPE_CHECKING:
@@ -119,25 +120,28 @@ def test_biarcs() -> None:
     # TODO: verify Hausdorff distance
     _verify_biarc_hausdorff(curve, biarcs, BIARC_TOLERANCE)
 
-def _verify_biarc_hausdorff(curve: geom2d.CubicBezier, biarcs: list[geom2d.Arc], tolerance: float) -> None:
+
+def _verify_biarc_hausdorff(
+    curve: geom2d.CubicBezier, biarcs: list[geom2d.Arc], tolerance: float
+) -> None:
     maxhd: float = 0
     for arc in biarcs:
         hd = curve.hausdorff_distance(arc, ndiv=100)
-        #print(f'hd = {hd}')
+        # print(f'hd = {hd}')
         maxhd = max(hd, maxhd)
 
-    #print(f'max hd: {maxhd}')
+    # print(f'max hd: {maxhd}')
     assert hd < tolerance
 
 
-@pytest.mark.parametrize(('curve', 'line', 'points'), INTERSECTIONS_PARAMETRIZE)
+@pytest.mark.parametrize(("curve", "line", "points"), INTERSECTIONS_PARAMETRIZE)
 def test_line_intersection(curve: tuple, line: tuple, points: tuple) -> None:
     b = geom2d.CubicBezier(*curve)
     pts = b.line_intersection(line)
     assert pts == points
 
 
-def test_find_roots():
+def test_find_roots() -> None:
     f1 = geom2d.CubicBezier(*LB_C1).roots()
     assert f1 == LB_INFL1
     f2 = geom2d.CubicBezier(*LB_C2).roots()

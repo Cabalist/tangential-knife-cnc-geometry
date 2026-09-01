@@ -1,13 +1,13 @@
 """Time various float equality tests."""
+# To run timing test:
+#
+#     uv run python floateq.py
 
-# ruff: noqa: D103, B023, T201
-
-from __future__ import annotations
-
+import functools
 import inspect
 import math
 import timeit
-from typing import Callable
+from collections.abc import Callable
 
 import geom2d
 from geom2d.const import EPSILON
@@ -106,18 +106,18 @@ def main() -> None:
         nargs = len(inspect.signature(feq).parameters)
         if nargs == 3:
             t = timeit.timeit(
-                lambda: feq(N1, N2, EPSILON),
+                functools.partial(feq, N1, N2, EPSILON),
                 number=1000000,
             )
         else:
             t = timeit.timeit(
-                lambda: feq(N1, N2),
+                functools.partial(feq, N1, N2),
                 number=1000000,
             )
         results.append((t, feq.__name__))
     for r in sorted(results):
-        print(f'{r[1]:<10} {r[0]:.06f}')
+        print(f"{r[1]:<10} {r[0]:.06f}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
