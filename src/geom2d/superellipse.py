@@ -58,7 +58,7 @@ def rhombus_superellipse(
         k: CSS-superellipse-like parameter::
 
             k < 0   concave / scooped
-            k = 0   diamond
+            k = 0   diamond / straight lines
             k = 1   ellipse
             k > 1   increasingly square
 
@@ -69,7 +69,8 @@ def rhombus_superellipse(
             instead of midpoints.
         fit_inside: Constrain convex superellipse within rhombus when
             `use_vertice_endpoints` is True.
-        use_bezier_max: Use the exact Bezier maximum for fitting.
+        use_bezier_max: Use Bezier maximum for fitting if True,
+            otherwise use exact Lamé curve maximum.
 
     Returns:
         List of (P0, C1, C2, P1) Cubic Bezier segments.

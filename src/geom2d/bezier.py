@@ -50,19 +50,19 @@ class CubicBezier(tuple[P, P, P, P]):
         )  # type: ignore [type-var]
 
     @staticmethod
-    def from_quadratic(qp1: TPoint, qp2: TPoint, qp3: TPoint) -> CubicBezier:
+    def from_quadratic(p1: TPoint, q: TPoint, p2: TPoint) -> CubicBezier:
         """Create a CubicBezier from a quadratic Bazier curve.
 
         Args:
-            qp1: Start point as 2-tuple (x, y).
-            qp2: Control point as 2-tuple (x, y).
-            qp3: End point as 2-tuple (x, y).
+            p1: Start point as 2-tuple (x, y).
+            q: Control point as 2-tuple (x, y).
+            p2: End point as 2-tuple (x, y).
         """
-        qp2 = P(qp2)
-        p1 = P(qp1)
-        p2 = P(qp3)
-        c1 = p1 + (2.0 * (qp2 - p1)) / 3.0
-        c2 = p2 + (2.0 * (qp2 - p2)) / 3.0
+        q = P(q)
+        p1 = P(p1)
+        p2 = P(p2)
+        c1 = p1 + (2.0 * (q - p1)) / 3.0
+        c2 = p2 + (2.0 * (q - p2)) / 3.0
         return CubicBezier(p1, c1, c2, p2)
 
     @property
