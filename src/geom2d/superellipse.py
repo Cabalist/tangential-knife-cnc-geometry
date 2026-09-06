@@ -46,7 +46,7 @@ def rhombus_superellipse(
     scale: float = 1.0,
     use_vertice_endpoints: bool = False,
     fit_inside: bool = True,
-    use_bezier_max: bool = True,
+    use_lame_max: bool = False,
 ) -> list[tuple[TPoint, TPoint, TPoint, TPoint]]:
     """Approximate a superellipse inscribed in a rhombus/parallelogram.
 
@@ -69,8 +69,8 @@ def rhombus_superellipse(
             instead of midpoints.
         fit_inside: Constrain convex superellipse within rhombus when
             `use_vertice_endpoints` is True.
-        use_bezier_max: Use Bezier maximum for fitting if True,
-            otherwise use exact Lamé curve maximum.
+        use_lame_max: Use Lamé curve maximum for fitting if True,
+            otherwise use Bezier curve maximum. Default is False (Bezier).
 
     Returns:
         List of (P0, C1, C2, P1) Cubic Bezier segments.
@@ -131,9 +131,9 @@ def rhombus_superellipse(
     if use_vertice_endpoints:
         if n > 1 and fit_inside:
             scale = (
-                _fit_scale_bezier(base_curves)[0]
-                if use_bezier_max
-                else _fit_scale_lame(n)
+                _fit_scale_lame(n)
+                if use_lame_max
+                else _fit_scale_bezier(base_curves)[0]
             )
         ux = points[0][0] - center[0]
         uy = points[0][1] - center[1]
