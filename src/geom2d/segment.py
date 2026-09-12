@@ -3,7 +3,8 @@
 A *segment* is any object with the structural interface below: ``Line``,
 ``Arc`` and ``CubicBezier`` satisfy it, and so can a consumer's own wrapper
 type. A *path* is a sequence of segments; helpers here never dispatch on
-concrete classes.
+concrete classes, and the ones that return segments keep the concrete type
+of their input (a list of a consumer's wrapper stays a list of that wrapper).
 """
 
 import itertools
@@ -66,7 +67,7 @@ type Path = Sequence[Segment]
 # ----- whole-path values -----------------------------------------------------
 
 
-def path_reversed(path: Path) -> list[Segment]:
+def path_reversed[S: Segment](path: Sequence[S]) -> list[S]:
     """The same path travelled the other way: every segment reversed, in reverse order."""
     return [segment.reversed() for segment in reversed(path)]
 
@@ -111,32 +112,40 @@ def polyline_to_path(points: Iterable[PointLike]) -> list[Line]:
     return [Line(a, b) for a, b in itertools.pairwise(converted)]
 
 
-def path_to_polyline(path: Path) -> list[P]:
+def path_to_polyline(path: Sequence[Segment]) -> list[P]:
     """The segment endpoints in order: every ``p1`` and the final ``p2``; ``[]`` for an empty path."""
     if not path:
         return []
     return [segment.p1 for segment in path] + [path[-1].p2]
 
 
-def nearest_vertex(path: Path, p: P) -> int:
-    """Index of the segment whose start point is nearest to ``p``.
+def nearest_vertex(path: Sequence[Segment], p: P) -> int:
+    """Index of the path vertex nearest to ``p``.
+
+    Vertex ``i`` is the start of segment ``i``. An open path also has vertex
+    ``len(path)``, the end of its last segment; on a closed path that point
+    coincides with vertex ``0`` and is not counted twice.
 
     Raises:
         GeometryError: If the path is empty.
     """
     if not path:
         raise GeometryError("an empty path has no vertices")
-    return min(range(len(path)), key=lambda i: path[i].p1.distance2(p))
+    vertices = [segment.p1 for segment in path]
+    if not path_is_closed(path):
+        vertices.append(path[-1].p2)
+    return min(range(len(vertices)), key=lambda i: vertices[i].distance2(p))
 
 
 # ----- joints -----------------------------------------------------------------
 
 
 def heading_change(seg1: Segment, seg2: Segment) -> float:
-    """Signed turn at the joint from ``seg1`` to ``seg2``, in ``[-pi, pi]``.
+    """Signed turn at the joint from ``seg1`` to ``seg2``, in ``(-pi, pi]``.
 
     Positive is a counter-clockwise (left) turn; wrap-safe across the ``+-pi``
-    seam; ``0.0`` where the tangent directions agree.
+    seam; no tolerance is applied, so it is ``0.0`` only where the tangent
+    directions agree exactly.
     """
     return util.calc_rotation(seg1.end_tangent_angle, seg2.start_tangent_angle)
 
@@ -148,7 +157,8 @@ def segments_are_g1(
 
     G0: ``seg1.p2`` coincides with ``seg2.p1`` within ``point_tolerance``
     (a distance, default ``EPSILON``). G1: the heading change at the joint
-    is zero within ``angle_tolerance`` (radians, default ``EPSILON``).
+    is zero within ``angle_tolerance`` (radians, default ``EPSILON``). Both
+    tolerances are applied as given, however small.
     """
     if not seg1.p2.almost_equal(seg2.p1, point_tolerance):
         return False
@@ -158,7 +168,7 @@ def segments_are_g1(
 # ----- splitting and rotating -------------------------------------------------
 
 
-def split_path(path: Path, indices: Iterable[int]) -> list[list[Segment]]:
+def split_path[S: Segment](path: Sequence[S], indices: Iterable[int]) -> list[list[S]]:
     """Split before each segment index in ``indices``.
 
     Index ``i`` names the joint between segments ``i - 1`` and ``i``, so valid
@@ -179,7 +189,7 @@ def split_path(path: Path, indices: Iterable[int]) -> list[list[Segment]]:
     return [segments[a:b] for a, b in itertools.pairwise(bounds)]
 
 
-def split_path_where(path: Path, predicate: Callable[[Segment, Segment], bool]) -> list[list[Segment]]:
+def split_path_where[S: Segment](path: Sequence[S], predicate: Callable[[S, S], bool]) -> list[list[S]]:
     """Split at every joint where ``predicate(before, after)`` is true.
 
     For a closed path the closing joint (last segment to first) is tested
@@ -199,7 +209,7 @@ def split_path_where(path: Path, predicate: Callable[[Segment, Segment], bool]) 
     return split_path(segments, interior)
 
 
-def path_start_at(path: Path, index: int) -> list[Segment]:
+def path_start_at[S: Segment](path: Sequence[S], index: int) -> list[S]:
     """Rotate a closed path so that segment ``index`` comes first.
 
     Raises:

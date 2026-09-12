@@ -5,12 +5,15 @@ import dataclasses
 import math
 import pickle
 import random
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from geom2d import GeometryError, P, const
 from tests.helpers import XY
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 RAW_PAIR = (1.0, 2.0)
 
@@ -51,7 +54,7 @@ def test_of_identity_and_conversions():
 
 
 @pytest.mark.parametrize("bad", [(1,), (1, 2, 3), "ab", ("a", "b"), object(), None, 5])
-def test_of_rejects_non_points(bad):
+def test_of_rejects_non_points(bad: Any):
     with pytest.raises(GeometryError):
         P.of(bad)
 
@@ -62,7 +65,20 @@ def test_from_polar():
     assert P(0.0, -3.0).angle == pytest.approx(-math.pi / 2)
 
 
-# ----- equality and hashing (RC3) ------------------------------------------
+@pytest.mark.parametrize("bad", [math.inf, -math.inf, math.nan])
+def test_non_finite_coordinates_are_rejected_at_construction(bad: float):
+    # Infinite or NaN coordinates fail here, not later in a hash or comparison.
+    with pytest.raises(GeometryError):
+        P(bad, 0.0)
+    with pytest.raises(GeometryError):
+        P(0.0, bad)
+    with pytest.raises(GeometryError):
+        P.of((bad, 1.0))
+    with pytest.raises(GeometryError):
+        P.from_polar(bad, 0.3)
+
+
+# ----- equality and hashing -----------------------------------------------
 
 
 def test_eq_and_hash_agree_on_grid_cells():
@@ -154,19 +170,19 @@ def test_vector_arithmetic():
     assert sum([a, b, a], P(0, 0)) == P(5.0, 3.0)
 
 
-@pytest.mark.parametrize(
-    "expr",
-    [
-        lambda a, b: a * b,
-        lambda a, _b: a + 1,
-        lambda a, _b: 1 + a,
-        lambda a, _b: a + RAW_PAIR,
-        lambda a, _b: a * "x",
-        lambda a, b: a / b,
-        lambda a, _b: "x" * a,
-    ],
-)
-def test_unsupported_operands_raise_type_error(expr):
+UNSUPPORTED_OPERATIONS: list[Callable[[Any, Any], object]] = [
+    lambda a, b: a * b,
+    lambda a, _b: a + 1,
+    lambda a, _b: 1 + a,
+    lambda a, _b: a + RAW_PAIR,
+    lambda a, _b: a * "x",
+    lambda a, b: a / b,
+    lambda a, _b: "x" * a,
+]
+
+
+@pytest.mark.parametrize("expr", UNSUPPORTED_OPERATIONS)
+def test_unsupported_operands_raise_type_error(expr: Callable[[Any, Any], object]):
     # Unsupported operands raise TypeError; tuples never concatenate.
     with pytest.raises(TypeError):
         expr(P(1.0, 2.0), P(3.0, 4.0))
@@ -248,6 +264,16 @@ def test_colinear():
     assert not P(0.0, 0.0).colinear(P(1e-3, 0.0), P(5e-4, 1e-6))
 
 
+def test_coincident_points_are_collinear():
+    # A zero reference length must not turn "no turn at all" into a right turn.
+    o = P(2.0, 3.0)
+    assert o.winding(o, o) == 0
+    assert o.colinear(o, o)
+    assert o.winding(P(5.0, 3.0), P(5.0, 3.0)) == 0
+    assert o.winding(o, P(5.0, 7.0)) == 0
+    assert o.colinear(P(5.0, 7.0), o)
+
+
 def test_rotate():
     p = P(1.0, 0.0)
     assert p.rotate(math.pi / 2).almost_equal(P(0.0, 1.0))
@@ -259,7 +285,7 @@ def test_rotate():
     assert far.distance(P(1e6, 0.0)) == pytest.approx(1e-3, rel=1e-6)
 
 
-def test_hash_follows_the_current_epsilon(restore_epsilon):
+def test_hash_follows_the_current_epsilon(restore_epsilon: None):
     # Documented policy: set_epsilon is called once at startup, before geometry is hashed.
     p = P(1, 2)
     d = {p: 1}

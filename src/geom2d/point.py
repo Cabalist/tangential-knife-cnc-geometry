@@ -43,6 +43,10 @@ class P:
     Arithmetic: ``p + q``, ``p - q``, ``-p``, ``p * k``, ``k * p``, ``p / k``.
     Operands of other types return ``NotImplemented`` (a ``TypeError`` to the
     caller). ``sum(points, P(0, 0))`` works.
+
+    Coordinates must be finite: a point with an infinite or NaN coordinate
+    raises :class:`GeometryError` at construction rather than failing later
+    in a hash or comparison.
     """
 
     x: float
@@ -50,10 +54,16 @@ class P:
 
     def __post_init__(self) -> None:
         # Normalise ints and other reals so the fields are always float.
-        if type(self.x) is not float:
-            object.__setattr__(self, "x", float(self.x))
-        if type(self.y) is not float:
-            object.__setattr__(self, "y", float(self.y))
+        x = self.x
+        y = self.y
+        if type(x) is not float:
+            x = float(x)
+            object.__setattr__(self, "x", x)
+        if type(y) is not float:
+            y = float(y)
+            object.__setattr__(self, "y", y)
+        if not (math.isfinite(x) and math.isfinite(y)):
+            raise GeometryError(f"point coordinates must be finite, got ({x!r}, {y!r})")
 
     # ----- construction -------------------------------------------------
 
@@ -253,7 +263,8 @@ class P:
 
         Returns ``1`` for counter-clockwise (left), ``-1`` for clockwise
         (right) and ``0`` when the points are collinear within ``EPSILON``
-        (measured as a perpendicular distance, so it does not depend on scale).
+        (measured as a perpendicular distance, so it does not depend on
+        scale). Coincident points are collinear.
         """
         v1 = p2 - self
         v2 = p3 - self
@@ -263,7 +274,7 @@ class P:
         return 1 if cross > 0 else -1
 
     def colinear(self, p2: P, p3: P, tolerance: float | None = None) -> bool:
-        """True if ``self``, ``p2`` and ``p3`` lie on one line within ``tolerance``."""
+        """True if ``self``, ``p2`` and ``p3`` lie on one line within ``tolerance``; coincident points qualify."""
         v1 = p2 - self
         v2 = p3 - self
         return const.cross_is_zero(v1.cross(v2), max(v1.length, v2.length), tolerance)

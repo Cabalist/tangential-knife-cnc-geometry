@@ -1,9 +1,13 @@
 name: CI
 
+# Runs on every push to main, every pull request, every release tag, and as
+# the quality gate the publish workflow calls before it builds a release.
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
+  workflow_call:
 
 jobs:
   checks:
@@ -15,7 +19,7 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
-      - run: uv sync --group dev
+      - run: uv sync --locked --group dev
       - run: uv run ruff format --check src tests
       - run: uv run ruff check src tests
       - run: uv run ty check
@@ -31,5 +35,5 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
-      - run: uv sync --group dev
+      - run: uv sync --locked --group dev
       - run: uv run python -O -m pytest

@@ -9,12 +9,12 @@ import random
 
 import pytest
 
-from geom2d import ApproximationError, GeometryError, P, angle_eq, const, float_eq
+from geom2d import ApproximationError, GeometryError, P, angle_eq, const, segments_are_g1
 from geom2d.arc import Arc
 from geom2d.bezier import CubicBezier
 from geom2d.box import Box
 from geom2d.line import Line
-from tests.helpers import XY, g1_everywhere
+from tests.helpers import XY, g1_everywhere, is_connected_chain
 
 ARCH = CubicBezier(P(0, 0), P(1, 2), P(3, 2), P(4, 0))
 S_CURVE = CubicBezier(P(0, 0), P(2, 3), P(4, -3), P(6, 0))  # one inflection at t = 0.5
@@ -197,10 +197,24 @@ def test_bounding_box_is_tight_and_contains_samples():
         samples = [curve.point_at(i / 400) for i in range(401)]
         for p in samples:
             assert box.contains_point(p)
-        tight = Box.from_points(samples)
-        assert float_eq(box.width, tight.width, 1e-4)
-        assert float_eq(box.height, tight.height, 1e-4)
+        tight = Box.from_points(samples)  # the sample grid can miss an extreme by a little, never exceed it
+        assert 0.0 <= box.width - tight.width < 1e-3
+        assert 0.0 <= box.height - tight.height < 1e-3
     assert ARCH.bounding_box == Box(P(0, 0), P(4, 1.5))
+
+
+def test_bounding_box_contains_thin_curves():
+    # A curve 1000 long and a millionth high still has a height: extrema are found per axis.
+    thin = CubicBezier(P(0, 0), P(1000 / 3, 1e-6), P(2000 / 3, 1e-6), P(1000, 0))
+    box = thin.bounding_box
+    assert box.contains_point(thin.midpoint)
+    assert box.height == pytest.approx(7.5e-7)
+    tall = CubicBezier(P(0, 0), P(1e-6, 1000 / 3), P(1e-6, 2000 / 3), P(0, 1000))
+    assert tall.bounding_box.contains_point(tall.midpoint)
+    assert tall.bounding_box.width == pytest.approx(7.5e-7)
+    for offset in (P(1e3, -1e3), P(1e6, 1e6)):
+        moved = CubicBezier(*(q + offset for q in (thin.p1, thin.c1, thin.c2, thin.p2)))
+        assert moved.bounding_box.contains_point(moved.midpoint)
 
 
 # ----- length --------------------------------------------------------------------
@@ -223,33 +237,66 @@ def test_length_matches_fine_polyline_and_is_bounded():
 # ----- intersections ------------------------------------------------------------------
 
 
-def test_line_intersection_degree_fallbacks():
-    # A vanishing cubic coefficient reduces to the quadratic (or linear) equation.
+def test_intersect_line_handles_every_degree():
+    # Degree-elevated quadratics and symmetric arches (vanishing cubic term) are found like any cubic.
     quad = CubicBezier.from_quadratic(P(0, 0), P(5, 10), P(10, 0))
-    pts = quad.line_intersection(Line(P(-1, 2), P(11, 2)))
+    pts = quad.intersect_line(Line(P(-1, 2), P(11, 2)))
     assert len(pts) == 2
     expected = sorted(((1 - math.sqrt(0.6)) / 2 * 10, (1 + math.sqrt(0.6)) / 2 * 10))
-    assert sorted(p.x for p in pts) == pytest.approx(expected, abs=1e-9)
-    assert all(p.y == pytest.approx(2.0, abs=1e-9) for p in pts)
+    assert sorted(p.x for p in pts) == pytest.approx(expected, abs=1e-12)
+    assert all(p.y == pytest.approx(2.0, abs=1e-12) for p in pts)
     symmetric = CubicBezier(P(0, 0), P(3, 4), P(6, 4), P(9, 0))
-    assert len(symmetric.line_intersection(Line(P(-1, 1), P(10, 1)))) == 2
-    assert symmetric.line_intersection(Line(P(-1, 5), P(10, 5))) == []
-    # Genuine cubic: three crossings of the S-curve's chord.
-    chord_hits = S_CURVE.line_intersection(Line(P(-1, 0), P(7, 0)))
-    assert sorted(p.x for p in chord_hits) == pytest.approx([0.0, 3.0, 6.0], abs=1e-9)
-    assert ARCH.line_intersection(Line(P(1, 1), P(1, 1))) == []  # degenerate line
+    assert len(symmetric.intersect_line(Line(P(-1, 1), P(10, 1)))) == 2
+    assert symmetric.intersect_line(Line(P(-1, 5), P(10, 5))) == []
+    # Genuine cubic: three crossings of the S-curve's chord, endpoints included.
+    chord_hits = S_CURVE.intersect_line(Line(P(-1, 0), P(7, 0)))
+    assert sorted(p.x for p in chord_hits) == pytest.approx([0.0, 3.0, 6.0], abs=1e-12)
+    assert ARCH.intersect_line(Line(P(1, 1), P(1, 1))) == []  # degenerate line
 
 
-def test_line_intersection_segment_filter():
-    # segment=True restricts hits to the line segment.
+def test_intersect_line_is_exact_near_quadratic_curves():
+    # x(t) = t, y(t) = 1e-7 t^3 + t^2 - t + 0.16: a cubic term too small for a closed-form
+    # cubic solver to keep its precision, with crossings of y = 0 near t = 0.2 and t = 0.8.
+    y0 = 0.16
+    curve = CubicBezier(P(0, y0), P(1 / 3, y0 - 1 / 3), P(2 / 3, y0 - 1 / 3), P(1, y0 + 1e-7))
+    axis = Line(P(-1, 0), P(2, 0))
+    hits = curve.intersect_line(axis)
+    assert len(hits) == 2
+    for p, near in zip(hits, (0.2, 0.8), strict=True):
+        assert abs(p.y) < 1e-14
+        assert p.x == pytest.approx(near, abs=1e-6)  # the cubic term shifts the quadratic's roots by up to 1e-7
+        assert abs(1e-7 * p.x**3 + p.x**2 - p.x + y0) < 1e-15  # x(t) = t, so p.x is the root itself
+    assert len(curve.intersect_line(axis, on_line=True)) == 2
+    # The same crossings when the whole picture sits far from the origin.
+    shift = P(1e6, 1e6)
+    moved = CubicBezier(*(q + shift for q in (curve.p1, curve.c1, curve.c2, curve.p2)))
+    far_axis = Line(axis.p1 + shift, axis.p2 + shift)
+    far_hits = moved.intersect_line(far_axis)
+    assert len(far_hits) == 2
+    assert all(far_axis.distance_to_point(p) < 1e-9 for p in far_hits)
+
+
+def test_intersect_line_reports_tangencies_once():
+    top = Line(P(-1, 1.5), P(5, 1.5))  # touches the arch's apex (2, 1.5)
+    hits = ARCH.intersect_line(top)
+    assert len(hits) == 1
+    assert hits[0].almost_equal(P(2, 1.5))
+    assert ARCH.intersect_line(Line(P(-1, 1.5 + 1e-6), P(5, 1.5 + 1e-6))) == []
+    assert len(ARCH.intersect_line(Line(P(-1, 1.5 - 1e-6), P(5, 1.5 - 1e-6)))) == 2
+    straight = CubicBezier(P(0, 0), P(1, 0), P(2, 0), P(3, 0))
+    assert straight.intersect_line(Line(P(-5, 0), P(9, 0))) == [P(0, 0), P(3, 0)]  # lies along the line
+
+
+def test_intersect_line_on_line_filter():
+    # on_line restricts hits to the line segment.
     curve = CubicBezier(P(0, 0), P(3, 4), P(6, -4), P(9, 0))
-    assert len(curve.line_intersection(Line(P(100, 1), P(101, 1)))) == 2  # infinite line
-    assert curve.line_intersection(Line(P(100, 1), P(101, 1)), segment=True) == []
-    assert len(curve.line_intersection(Line(P(0, 1), P(3, 1)), segment=True)) == 2  # x ~ 0.82 and 2.7
-    assert len(curve.line_intersection(Line(P(0, 1), P(2, 1)), segment=True)) == 1
+    assert len(curve.intersect_line(Line(P(100, 1), P(101, 1)))) == 2  # infinite line
+    assert curve.intersect_line(Line(P(100, 1), P(101, 1)), on_line=True) == []
+    assert len(curve.intersect_line(Line(P(0, 1), P(3, 1)), on_line=True)) == 2  # x ~ 0.82 and 2.7
+    assert len(curve.intersect_line(Line(P(0, 1), P(2, 1)), on_line=True)) == 1
 
 
-def test_line_intersection_matches_brute_force_root_count():
+def test_intersect_line_matches_brute_force_root_count():
     rng = random.Random(3)
     for _ in range(200):
         curve = _random_curve(rng)
@@ -258,10 +305,10 @@ def test_line_intersection_matches_brute_force_root_count():
             continue
         sides = [line.which_side(curve.point_at(i / 2000)) for i in range(2001)]
         crossings = sum(1 for a, b in itertools.pairwise(sides) if a * b < 0)
-        found = curve.line_intersection(line)
+        found = curve.intersect_line(line)
         assert abs(len(found) - crossings) <= 1  # tangencies and sample-grid touches
         for p in found:
-            assert line.distance_to_point(p) < 1e-6
+            assert line.distance_to_point(p) < 1e-9
 
 
 # ----- biarc approximation ---------------------------------------------------------------
@@ -275,7 +322,7 @@ def _check_contract(curve: CubicBezier, segments: list[Line | Arc], tolerance: f
     assert segments[-1].p2 is curve.p2 or segments[-1].p2 == curve.p2
     for a, b in itertools.pairwise(segments):
         assert a.p2.almost_equal(b.p1)
-        assert angle_eq(a.end_tangent_angle, b.start_tangent_angle, 1e-6), (a, b)
+        assert segments_are_g1(a, b), (a, b)  # the public check at its default tolerance
     # Two-sided Hausdorff: curve samples to the nearest segment and segment samples to the curve.
     worst = max(min(_segment_distance(s, curve.point_at(i / 400)) for s in segments) for i in range(401))
     assert worst <= tolerance * 1.05, worst
@@ -289,6 +336,211 @@ def test_biarc_output_contract_on_random_curves():
         curve = _random_curve(rng)
         segments = curve.biarc_approximation(tol, max_depth=10)
         _check_contract(curve, segments, tol)
+
+
+def test_biarc_is_g1_at_default_tolerance_far_from_the_origin():
+    # The joint construction runs relative to p1, so translation does not cost joint precision.
+    rng = random.Random(9)
+    curves = [ARCH, S_CURVE, LOOP, *(_random_curve(rng) for _ in range(5))]
+    for offset in (P(1e3, -1e3), P(1e6, 1e6)):
+        for curve in curves:
+            moved = CubicBezier(*(q + offset for q in (curve.p1, curve.c1, curve.c2, curve.p2)))
+            segments = moved.biarc_approximation(0.001)
+            _check_contract(moved, segments, 0.001)
+            assert segments[0].p1 is moved.p1
+            assert segments[-1].p2 is moved.p2
+
+
+def _feature_size(segment: Line | Arc) -> float:
+    return segment.radius if isinstance(segment, Arc) else segment.length
+
+
+def test_biarc_joint_precision_follows_the_coordinate_envelope():
+    # The documented rule: a direction derived from a feature of size s at coordinate magnitude |x|
+    # carries about 1e-16 * |x| / s radians of rounding. Joints between features larger than
+    # 1e-8 * |x| meet the default EPSILON; smaller features meet the rounding allowance.
+    rng = random.Random(5)
+    magnitude = 1e6
+    offset = P(magnitude, magnitude)
+    small_features = 0
+    for _ in range(40):
+        curve = CubicBezier(*(P(rng.uniform(-10, 10), rng.uniform(-10, 10)) + offset for _ in range(4)))
+        segments = curve.biarc_approximation(0.001)
+        for a, b in itertools.pairwise(segments):
+            size = min(_feature_size(a), _feature_size(b))
+            if size >= 1e-8 * magnitude:
+                assert segments_are_g1(a, b), (a, b)
+            else:
+                small_features += 1
+                assert segments_are_g1(a, b, angle_tolerance=4e-16 * magnitude / size), (a, b)
+    assert small_features > 0  # the allowance branch was exercised
+
+
+def test_sub_epsilon_pieces_are_absorbed_not_dropped():
+    # A curve 4e-7 across approximated at the EPSILON floor: pieces too short to be segments
+    # are merged into their neighbours, never dropped, so the chain stays exactly connected.
+    micro = CubicBezier(P(0, 0), P(1e-7, 2e-7), P(3e-7, 2e-7), P(4e-7, 0))
+    for strict in (False, True):
+        segments = micro.biarc_approximation(const.EPSILON, strict=strict)
+        assert is_connected_chain(micro, segments)
+    # A sweep limit that would need arcs shorter than EPSILON is refused explicitly.
+    with pytest.raises(GeometryError):
+        micro.biarc_approximation(const.EPSILON, max_arc_angle=0.01)
+    rng = random.Random(11)
+    for _ in range(60):
+        size = 10 ** rng.uniform(-7.5, -5.5)
+        tiny = CubicBezier(*(P(rng.uniform(-size, size), rng.uniform(-size, size)) for _ in range(4)))
+        if tiny.is_degenerate:
+            continue
+        assert is_connected_chain(tiny, tiny.biarc_approximation(const.EPSILON, strict=False))
+        try:
+            strict_result = tiny.biarc_approximation(const.EPSILON)
+        except ApproximationError:
+            continue
+        assert is_connected_chain(tiny, strict_result)
+
+
+def test_non_degenerate_curves_never_vanish():
+    # A hairpin whose ends coincide has no chord to fall back on: it is halved even at max_depth=0.
+    hairpin = CubicBezier(P(0, 0), P(1, 0), P(1, 0), P(0, 0))
+    assert not hairpin.is_degenerate
+    assert is_connected_chain(hairpin, hairpin.biarc_approximation(max_depth=0, strict=False))
+    assert is_connected_chain(hairpin, hairpin.biarc_approximation(0.001))
+    # A hairpin folded within 0.9 EPSILON has no extent: degenerate, so [] is its documented answer,
+    # even though its control polygon is 1.8 EPSILON long.
+    folded = CubicBezier(P(0, 0), P(0.9e-8, 0), P(0.9e-8, 0), P(0, 0))
+    assert folded.polygon_length > const.EPSILON
+    assert folded.is_degenerate
+    assert folded.biarc_approximation(const.EPSILON) == []
+    # With extent exactly EPSILON it is not degenerate, yet nothing EPSILON long can span it: an explicit error.
+    edge = CubicBezier(P(0, 0), P(1e-8, 0), P(1e-8, 0), P(0, 0))
+    assert not edge.is_degenerate
+    for strict in (False, True):
+        with pytest.raises(ApproximationError):
+            edge.biarc_approximation(const.EPSILON, strict=strict)
+    # Between the two: either a connected chain or an explicit error, never [].
+    rng = random.Random(13)
+    for _ in range(40):
+        size = 10 ** rng.uniform(-8.2, -7.0)
+        tiny = CubicBezier(P(0, 0), P(rng.uniform(-size, size), rng.uniform(-size, size)), P(size, 0), P(0, 0))
+        if tiny.is_degenerate:
+            continue
+        for strict in (False, True):
+            try:
+                chain = tiny.biarc_approximation(const.EPSILON, strict=strict)
+            except ApproximationError:
+                continue
+            assert is_connected_chain(tiny, chain)
+
+
+def test_cleanup_never_leaves_a_degenerate_tail():
+    scaled = CubicBezier(*(P(x, y) * 1e-8 for x, y in ((2.3, -3.1), (-4.5, 3.9), (6.5, 5.7), (-4.2, 3.8))))
+    chain = scaled.biarc_approximation(const.EPSILON)
+    assert is_connected_chain(scaled, chain)
+    rng = random.Random(17)
+    for _ in range(80):
+        pts = [P(rng.uniform(-8, 8), rng.uniform(-8, 8)) * 1e-8 for _ in range(4)]
+        curve = CubicBezier(*pts)
+        if curve.is_degenerate:
+            continue
+        try:
+            chain = curve.biarc_approximation(const.EPSILON)
+        except ApproximationError:
+            continue
+        assert is_connected_chain(curve, chain)
+
+
+def test_collinear_curves_that_double_back_report_their_extent():
+    # All control points on the x axis: the curve runs out to x = 2.896, back past its start and on to x = 1.
+    curve = CubicBezier(*(P(x, 0) for x in (0, 10, -10, 1)))
+    assert not curve.is_straight
+    assert curve.intersect_line(Line(P(2, 0), P(2.5, 0)), on_line=True) == [P(2, 0), P(2.5, 0)]
+    whole = curve.intersect_line(Line(P(2, 0), P(2.5, 0)))
+    xs = [curve.point_at(i / 200_000).x for i in range(200_001)]
+    assert whole[0].x == pytest.approx(min(xs), abs=1e-6)
+    assert whole[1].x == pytest.approx(max(xs), abs=1e-6)
+    assert curve.intersect_line(Line(P(2.8, 0), P(4, 0)), on_line=True)[1].x == pytest.approx(max(xs), abs=1e-6)
+    assert curve.intersect_line(Line(P(3, 0), P(4, 0)), on_line=True) == []
+    lifted = Line(P(2, 0.5e-8), P(2.5, 0.5e-8))  # still within EPSILON of the curve's line
+    assert len(curve.intersect_line(lifted, on_line=True)) == 2
+
+
+def test_biarc_merge_keeps_the_pair_when_the_merged_arc_is_invalid():
+    # Two arcs whose radii and centers agree within EPSILON are merged only if the merged arc
+    # satisfies the invariant; otherwise the valid pair stays. This curve has a cusp of turning
+    # radius 2.8e-9, so exactly one joint is a corner (the documented exception).
+    curve = CubicBezier(P(0, 0), P(-0.00051007, -0.00078653), P(-0.00034432, 0.00033176), P(0.000514, -0.00120766))
+    segments = curve.biarc_approximation(1e-7)
+    assert is_connected_chain(curve, segments)
+    corners = [a for a, b in itertools.pairwise(segments) if not segments_are_g1(a, b)]
+    assert len(corners) <= 1
+    assert min(1 / abs(curve.curvature_at(i / 1000)) for i in range(1, 1000)) < const.EPSILON
+
+
+def test_approximation_then_sweep_split_stays_connected_and_g1():
+    segments = ARCH.biarc_approximation(0.001, max_arc_angle=0.05)
+    assert is_connected_chain(ARCH, segments)
+    assert all(abs(s.angle) <= 0.05 + 1e-12 for s in segments if isinstance(s, Arc))
+    assert g1_everywhere(segments)
+    _check_contract(ARCH, segments, 0.001)
+
+
+def test_intersect_line_overlap_convention():
+    # A straight curve along the line shares a stretch with it: the ends of that stretch are reported.
+    straight = CubicBezier(P(0, 0), P(1, 0), P(2, 0), P(3, 0))
+    assert straight.intersect_line(Line(P(1, 0), P(2, 0))) == [P(0, 0), P(3, 0)]
+    assert straight.intersect_line(Line(P(1, 0), P(2, 0)), on_line=True) == [P(1, 0), P(2, 0)]
+    assert straight.intersect_line(Line(P(2, 0), P(5, 0)), on_line=True) == [P(2, 0), P(3, 0)]
+    assert straight.intersect_line(Line(P(5, 0), P(3, 0)), on_line=True) == [P(3, 0)]
+    assert straight.intersect_line(Line(P(5, 0), P(6, 0)), on_line=True) == []
+    # The same at an angle and away from the origin.
+    turn = math.radians(37)
+    shift = P(100, -50)
+    pts = [P.from_polar(x, turn) + shift for x in (0, 1, 2, 3)]
+    rotated = CubicBezier(*pts)
+    inside = Line(P.from_polar(1, turn) + shift, P.from_polar(2, turn) + shift)
+    hits = rotated.intersect_line(inside, on_line=True)
+    assert len(hits) == 2
+    assert hits[0].almost_equal(inside.p1)
+    assert hits[1].almost_equal(inside.p2)
+
+
+def test_intersections_lie_on_both_shapes_and_survive_operand_reversal():
+    rng = random.Random(19)
+    checked = 0
+    for _ in range(150):
+        curve = _random_curve(rng)
+        line = Line(P(rng.uniform(-10, 10), rng.uniform(-10, 10)), P(rng.uniform(-10, 10), rng.uniform(-10, 10)))
+        if line.is_degenerate:
+            continue
+        hits = curve.intersect_line(line, on_line=True)
+        for p in hits:
+            assert line.point_on_line(p, segment=True)
+            assert min(curve.point_at(i / 4000).distance(p) for i in range(4001)) < 1e-2
+        mirrored = curve.intersect_line(line.reversed(), on_line=True)
+        assert len(mirrored) == len(hits)
+        assert all(any(p.almost_equal(q, 1e-9) for q in mirrored) for p in hits)
+        checked += len(hits)
+    assert checked > 50
+
+
+def test_output_is_valid_after_cleanup_splitting_and_translation():
+    rng = random.Random(23)
+    curves = [ARCH, S_CURVE, LOOP, *(_random_curve(rng) for _ in range(6))]
+    for offset in (P(0, 0), P(-1e3, 2e3), P(1e6, 1e6)):
+        for curve in curves:
+            moved = CubicBezier(*(q + offset for q in (curve.p1, curve.c1, curve.c2, curve.p2)))
+            chain = moved.biarc_approximation(0.01, max_arc_angle=math.pi / 4)
+            assert is_connected_chain(moved, chain)
+            assert all(abs(s.angle) <= math.pi / 4 + 1e-12 for s in chain if isinstance(s, Arc))
+            assert g1_everywhere(chain)
+            assert moved.hausdorff_distance(chain) <= 0.01 * 1.05
+
+
+def test_hausdorff_distance_validates_the_sample_count():
+    for bad in (0, -1):
+        with pytest.raises(GeometryError):
+            ARCH.hausdorff_distance([ARCH.chord], samples=bad)
 
 
 def test_biarc_hausdorff_is_two_sided():
@@ -363,6 +615,8 @@ def test_hausdorff_distance_is_two_sided():
     long = CubicBezier(P(0, 0), P(1e6 / 3, 0), P(2e6 / 3, 0), P(1e6, 0))
     assert long.hausdorff_distance([Line(P(0, 0), P(1e6, 0))]) < 1e-9
     assert circle_ish.hausdorff_distance([arc.subdivide(0.5)[0]]) > 0.5  # half the arc misses half the curve
+    with pytest.raises(GeometryError):
+        circle_ish.hausdorff_distance([])
 
 
 def test_flattening_never_breaks_tangent_continuity():
@@ -415,12 +669,14 @@ def test_tolerance_floor_is_epsilon():
         ARCH.biarc_approximation(0.0)
 
 
-def test_strict_raises_when_depth_is_exhausted():
+def test_strict_is_the_default_and_best_effort_is_opt_in():
     wild = CubicBezier(P(0, 0), P(10, 30), P(-20, 30), P(5, 0))
-    assert wild.biarc_approximation(1e-6, max_depth=0)  # best effort by default
     with pytest.raises(ApproximationError):
-        wild.biarc_approximation(1e-6, max_depth=0, strict=True)
-    fine = wild.biarc_approximation(0.01, max_depth=12, strict=True)
+        wild.biarc_approximation(1e-6, max_depth=0)
+    best_effort = wild.biarc_approximation(1e-6, max_depth=0, strict=False)
+    assert best_effort
+    assert g1_everywhere(best_effort)  # even a failed tolerance keeps the tangent contract
+    fine = wild.biarc_approximation(0.01, max_depth=12)
     assert wild.hausdorff_distance(fine, samples=200) <= 0.01 * 1.1  # sampled estimate; small slack
 
 
@@ -433,7 +689,7 @@ def test_to_svg_path():
     assert ARCH.to_svg_path(add_prefix=False, scale=2, precision=1) == "2,4 6,4 8,0"
 
 
-def test_epsilon_governs_degeneracy(restore_epsilon):
+def test_epsilon_governs_degeneracy(restore_epsilon: None):
     small = CubicBezier(P(0, 0), P(1e-6, 0), P(2e-6, 0), P(3e-6, 0))
     assert not small.is_degenerate
     const.set_epsilon(1e-4)

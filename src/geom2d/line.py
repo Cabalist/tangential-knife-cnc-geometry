@@ -227,9 +227,13 @@ class Line:
         return -tol <= self.mu(p) <= 1.0 + tol
 
     def is_parallel(self, other: Line, *, inline: bool = False) -> bool:
-        """True if the two segments are parallel (within ``EPSILON``); with ``inline`` also collinear.
+        """True if the directions agree within ``EPSILON`` radians; with ``inline`` also collinear.
 
-        Degenerate segments are parallel to nothing.
+        This is a direction test. It does not decide whether two *segments*
+        meet: long segments whose directions differ by less than ``EPSILON``
+        can still cross, and :meth:`intersection` with ``segment=True`` and
+        :meth:`crosses` find that crossing. Degenerate segments are parallel
+        to nothing.
         """
         len1 = self.length
         len2 = other.length
@@ -245,10 +249,18 @@ class Line:
     def _intersection_params(self, other: Line, *, segment: bool) -> tuple[float, float] | None:
         """Parameters ``(mu_a, mu_b)`` of the intersection, or None.
 
-        Parallel, non-collinear lines have no intersection. Collinear lines
-        intersect everywhere: the reported point is ``p1`` for infinite lines
-        and the start of the overlap for segments, or None if the segments
-        do not overlap.
+        The lines are collinear when their directions agree within
+        ``EPSILON`` and ``other.p1`` is within ``EPSILON`` of this line (a
+        short segment lying inside this line's tolerance band at a visible
+        angle is not collinear: its own line crosses this one). Collinear
+        lines intersect everywhere, and the reported point is ``p1`` for
+        infinite lines and the start of the overlap for segments (None if
+        the segments do not overlap). Otherwise two infinite lines meet
+        unless their directions agree within ``EPSILON`` (a far-away,
+        ill-conditioned point is not reported), while two segments meet
+        whenever the crossing lies on both of them: the parameters are
+        computed from the endpoints, however nearly parallel the segments
+        are, and only an exactly zero cross product rules a crossing out.
         """
         len_a = self.length
         len_b = other.length
@@ -256,12 +268,13 @@ class Line:
             return None
         va = self.vector
         vb = other.vector
-        denom = va.cross(vb)
-        if const.is_parallel(denom, len_a, len_b):
-            if not const.cross_is_zero(va.cross(other.p1 - self.p1), len_a):
-                return None
-            return self._collinear_overlap(other, segment=segment)
         w = other.p1 - self.p1
+        denom = va.cross(vb)
+        parallel = const.is_parallel(denom, len_a, len_b)
+        if parallel and const.cross_is_zero(va.cross(w), len_a):
+            return self._collinear_overlap(other, segment=segment)
+        if denom == 0.0 or (not segment and parallel):
+            return None
         mu_a = w.cross(vb) / denom
         mu_b = w.cross(va) / denom
         if segment:
@@ -286,10 +299,11 @@ class Line:
     def intersection_mu(self, other: Line, *, segment: bool = False) -> float | None:
         """Parameter along this line of the intersection with ``other``, or None.
 
-        By default the two infinite lines are intersected; ``segment=True``
+        By default the two infinite lines are intersected, and lines whose
+        directions agree within ``EPSILON`` count as parallel; ``segment=True``
         requires the point to lie on both segments, tested within ``EPSILON``
-        as a distance. Collinear overlapping lines report the start of the
-        overlap.
+        as a distance, and finds it however nearly parallel the segments are.
+        Collinear overlapping lines report the start of the overlap.
         """
         params = self._intersection_params(other, segment=segment)
         return None if params is None else params[0]
@@ -306,24 +320,15 @@ class Line:
     def crosses(self, other: Line) -> bool:
         """True if the segments cross at a point strictly interior to both.
 
-        Touching at an endpoint or overlapping collinearly is not a crossing.
-        The relation is symmetric.
+        Each segment's endpoints must lie on opposite sides of the other's
+        line, more than ``EPSILON`` away from it; so touching at an endpoint
+        or overlapping collinearly is not a crossing, however nearly parallel
+        two long crossing segments are. The relation is symmetric.
         """
-        len_a = self.length
-        len_b = other.length
-        if len_a < const.EPSILON or len_b < const.EPSILON:
-            return False
-        va = self.vector
-        vb = other.vector
-        denom = va.cross(vb)
-        if const.is_parallel(denom, len_a, len_b):
-            return False
-        w = other.p1 - self.p1
-        mu_a = w.cross(vb) / denom
-        mu_b = w.cross(va) / denom
-        tol_a = const.EPSILON / len_a
-        tol_b = const.EPSILON / len_b
-        return tol_a < mu_a < 1.0 - tol_a and tol_b < mu_b < 1.0 - tol_b
+        return (
+            self.which_side(other.p1) * self.which_side(other.p2) < 0
+            and other.which_side(self.p1) * other.which_side(self.p2) < 0
+        )
 
     # ----- output -------------------------------------------------------
 

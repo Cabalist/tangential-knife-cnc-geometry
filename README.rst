@@ -33,7 +33,7 @@ Install and use
     from geom2d import P, Line, Arc, CubicBezier, path_is_closed, segments_are_g1
 
     curve = CubicBezier.from_quadratic(P(0, 0), P(5, 10), P(10, 0))
-    segments = curve.biarc_approximation(0.01, max_arc_angle=3.1416 / 2)
+    segments = curve.biarc_approximation(0.01, max_arc_angle=3.1416 / 2)  # raises if 0.01 cannot be met
     assert all(segments_are_g1(a, b) for a, b in zip(segments, segments[1:]))
 
 Conventions
@@ -43,13 +43,23 @@ Conventions
   ``winding`` or turn means counter-clockwise (left). ``Arc.angle`` is the
   signed sweep; positive is counter-clockwise. ``offset(+d)`` moves a segment
   to the left of its direction of travel.
+* ``EPSILON`` is an absolute distance at every magnitude; ``angle_eq``
+  compares directions a whole turn apart as equal. Coordinates should stay
+  below about ``1e7``, and tangent directions resolve to ``EPSILON`` only for
+  features larger than about ``1e-8`` times the coordinate magnitude.
+* ``EPSILON`` is a numerical floor, not a physical one: set it far below the
+  process resolution, pass tolerances at the process resolution, and drop
+  features below that floor yourself. Near ``EPSILON`` the library promises
+  self-consistency (no crashes, nothing silently dropped, connected output),
+  never physical meaning.
 * ``==`` and ``hash`` on geometry are grid identity at ``EPSILON`` resolution
   (so objects work in sets and dicts); ``P.almost_equal`` tests geometric
   coincidence. ``set_epsilon`` is called once at startup, before any geometry
   is created.
-* Invalid public input raises ``GeometryError`` (a ``ValueError``); degenerate
-  input has documented return values instead of arithmetic errors; nothing
-  depends on ``assert``.
+* Invalid geometric input raises ``GeometryError`` (a ``ValueError``); a biarc
+  approximation that cannot meet its tolerance raises ``ApproximationError``
+  unless ``strict=False``; degenerate input has documented return values
+  instead of arithmetic errors; nothing depends on ``assert``.
 
 Development
 -----------

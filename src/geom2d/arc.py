@@ -34,6 +34,12 @@ class Arc:
     dataclass constructor takes ``P`` fields; the factory classmethods accept
     any :data:`~geom2d.point.PointLike`.
 
+    Every query that asks whether a point is on the circle uses ``EPSILON``
+    as an absolute distance, the same test as the constructor. The tangent
+    at each end is derived from that end's stored point, so two arcs that
+    share an endpoint report tangents there that depend only on their
+    centers, not on the accumulated sweep.
+
     Equality is grid identity on every field (see ``P``), so an arc and
     its ``reversed()`` differ. A zero-sweep arc is *degenerate*: its
     tangent angles are ``0.0``, ``mu`` is ``0.0``, ``point_at`` is ``p1``
@@ -71,11 +77,15 @@ class Arc:
     def from_sweep(cls, p1: PointLike, p2: PointLike, radius: float, angle: float) -> Arc:
         """Create an arc from its endpoints, radius and signed sweep; the center is computed.
 
+        Any non-zero sweep is accepted: a sweep of ``1e-9`` at radius ``1e6``
+        is a valid arc of length ``0.001``. Whether the sweep, radius and
+        chord fit together is decided by the constructor's invariant.
+
         Raises:
             DegenerateGeometryError: If ``p1`` and ``p2`` coincide (the center
                 of a full circle cannot be inferred).
-            GeometryError: If the chord is longer than the diameter or the
-                inputs are otherwise inconsistent.
+            GeometryError: If the sweep is zero, the chord is longer than the
+                diameter, or the inputs are otherwise inconsistent.
         """
         a = P.of(p1)
         b = P.of(p2)
@@ -89,8 +99,9 @@ class Arc:
 
         ``tangent_point`` is a point, not a vector: the tangent direction is
         ``tangent_point - p1``. Returns None when the arc is degenerate
-        (coincident points) or would be a straight line (collinear points).
-        With ``reverse`` the arc runs from ``p2`` back to ``p1``.
+        (coincident points) or would be a straight line (the tangent runs
+        along the chord, in either direction). With ``reverse`` the arc runs
+        from ``p2`` back to ``p1``.
         """
         p1 = P.of(p1)
         p2 = P.of(p2)
@@ -98,7 +109,7 @@ class Arc:
         if p1.almost_equal(p2) or p1.almost_equal(tangent_point):
             return None
         angle = 2.0 * p1.angle2(tangent_point, p2)
-        if const.is_zero(angle) or const.angle_eq(abs(angle), const.TAU):
+        if const.angle_eq(angle, 0.0):
             return None
         chord = p1.distance(p2)
         radius = abs(chord / (2.0 * math.sin(angle / 2.0)))
@@ -130,6 +141,11 @@ class Arc:
         return theta <= abs(self.angle) + self._angle_tolerance
 
     def _angle_at(self, t: float) -> float:
+        """Direction from the center to the point at ``t``; at either end it comes from the stored endpoint."""
+        if t == 0.0:
+            return self.start_angle
+        if t == 1.0:
+            return self.end_angle
         return self.start_angle + self.angle * t
 
     # ----- derived values -----------------------------------------------
@@ -156,7 +172,11 @@ class Arc:
 
     @property
     def is_full_circle(self) -> bool:
-        """True if the sweep is a full turn (``p1`` coincides with ``p2``)."""
+        """True if the sweep is a full turn, so ``p1`` and ``p2`` coincide.
+
+        :meth:`to_svg_path` writes such an arc as two half turns, because
+        SVG drops an arc command whose endpoints are identical.
+        """
         return abs(self.angle) >= const.TAU - self._angle_tolerance
 
     @property
@@ -243,7 +263,13 @@ class Arc:
         return self.center + P.from_polar(self.radius, self.start_angle + self.direction * theta)
 
     def tangent_at(self, t: float) -> P:
-        """Unit tangent in the direction of travel at parameter ``t``; zero vector if degenerate."""
+        """Unit tangent in the direction of travel at parameter ``t``; zero vector if degenerate.
+
+        At ``t = 0`` and ``t = 1`` the tangent is perpendicular to the
+        radius through the stored endpoint, so it matches the neighbouring
+        segment's tangent at a shared point as closely as the two centers
+        allow.
+        """
         if self.is_degenerate:
             return P(0.0, 0.0)
         return P.from_polar(1.0, self._angle_at(t) + self.direction * math.pi / 2.0)
@@ -301,12 +327,17 @@ class Arc:
         """Split into ``n`` arcs of equal sweep.
 
         Raises:
-            GeometryError: If ``n`` is less than 1.
+            GeometryError: If ``n`` is less than 1, or if the pieces would be
+                shorter than ``EPSILON`` (a tiny arc cannot be split).
         """
         if n < 1:
             raise GeometryError(f"number of pieces must be at least 1, got {n!r}")
         if n == 1:
             return [self]
+        if self.length / n < const.EPSILON:
+            raise GeometryError(
+                f"splitting an arc of length {self.length!r} into {n} pieces would make them degenerate"
+            )
         step = self.angle / n
         points = [self.p1] + [self.point_at(i / n) for i in range(1, n)] + [self.p2]
         return [Arc(points[i], points[i + 1], self.radius, step, self.center) for i in range(n)]
@@ -315,7 +346,8 @@ class Arc:
         """Split into equal arcs each with ``|angle| <= max_angle`` (defaults to a quarter turn).
 
         Raises:
-            GeometryError: If ``max_angle`` is not positive.
+            GeometryError: If ``max_angle`` is not positive, or if meeting it
+                would need pieces shorter than ``EPSILON``.
         """
         if max_angle <= 0.0:
             raise GeometryError(f"max_angle must be positive, got {max_angle!r}")
@@ -358,8 +390,9 @@ class Arc:
         """Move the arc perpendicular to itself; positive is to the left of travel.
 
         A counter-clockwise arc shrinks toward its center for positive
-        ``distance``; a clockwise one grows. The sweep and center are kept.
-        A degenerate arc is returned unchanged.
+        ``distance``; a clockwise one grows. The sweep and center are kept
+        and the new endpoints are constructed on the new circle. A degenerate
+        arc is returned unchanged.
 
         Raises:
             GeometryError: If the offset would collapse the arc onto or past its center.
@@ -369,16 +402,18 @@ class Arc:
         new_radius = self.radius - self.direction * distance
         if new_radius < const.EPSILON:
             raise GeometryError(f"offset {distance!r} collapses an arc of radius {self.radius!r}")
-        scale = new_radius / self.radius
-        p1 = self.center + (self.p1 - self.center) * scale
-        p2 = self.center + (self.p2 - self.center) * scale
+        # Endpoints are placed on the new circle from the sweep, so the slack the invariant
+        # allowed in this arc's endpoints is not scaled up with the radius.
+        start = self.start_angle
+        p1 = self.center + P.from_polar(new_radius, start)
+        p2 = self.center + P.from_polar(new_radius, start + self.angle)
         return Arc(p1, p2, new_radius, self.angle, self.center)
 
     # ----- relations ----------------------------------------------------
 
     def point_on_arc(self, p: P) -> bool:
-        """True if ``p`` lies on the arc (within ``EPSILON``), including its endpoints."""
-        if not const.float_eq(self.center.distance(p), self.radius):
+        """True if ``p`` lies on the arc (within ``EPSILON`` of the circle), including its endpoints."""
+        if not const.is_zero(self.center.distance(p) - self.radius):
             return False
         return self._in_sweep(p)
 
@@ -414,44 +449,68 @@ class Arc:
     def intersect_line(self, line: Line, *, on_arc: bool = False, on_line: bool = False) -> list[P]:
         """Intersections of the arc's circle with the line through ``line``.
 
-        ``on_arc`` keeps only points on this arc's sweep; ``on_line`` keeps
-        only points on the line *segment*. A degenerate line gives no
-        intersections.
+        A line whose distance from the center is within ``EPSILON`` of the
+        radius is tangent and meets the circle once, at the foot of the
+        perpendicular from the center. ``on_arc`` keeps only points on this
+        arc's sweep; ``on_line`` keeps only points on the line *segment*. The
+        points come in order along this arc's direction of travel from
+        ``p1`` (continuing around the circle for points off the sweep). A
+        degenerate line gives no intersections.
         """
         if line.is_degenerate:
             return []
-        lp1 = line.p1 - self.center
-        lp2 = line.p2 - self.center
-        dx = lp2.x - lp1.x
-        dy = lp2.y - lp1.y
-        dr2 = dx * dx + dy * dy
-        det = lp1.cross(lp2)
-        r2 = self.radius * self.radius
-        dsc = r2 * dr2 - det * det
-        candidates: list[P] = []
-        if const.is_zero_rel(dsc, r2 * dr2):
-            candidates.append(line.normal_projection_point(self.center))
-        elif dsc > 0.0:
-            sgn = -1.0 if dy < 0 else 1.0
-            root = math.sqrt(dsc)
-            x1 = (det * dy + sgn * dx * root) / dr2
-            x2 = (det * dy - sgn * dx * root) / dr2
-            y1 = (-det * dx + abs(dy) * root) / dr2
-            y2 = (-det * dx - abs(dy) * root) / dr2
-            candidates.append(P(x1, y1) + self.center)
-            candidates.append(P(x2, y2) + self.center)
-        return [
+        foot = line.normal_projection_point(self.center)
+        h = foot.distance(self.center)
+        r = self.radius
+        if const.is_zero(h - r):
+            candidates = [foot]
+        elif h > r:
+            candidates: list[P] = []
+        else:
+            step = line.vector * (math.sqrt(r * r - h * h) / line.length)
+            candidates = [foot - step, foot + step]
+        kept = [
             p
             for p in candidates
             if (not on_arc or self._in_sweep(p)) and (not on_line or line.point_on_line(p, segment=True))
         ]
+        return sorted(kept, key=self.mu)
 
     def intersect_arc(self, other: Arc, *, on_arc: bool = False) -> list[P]:
-        """Intersections of the two arcs' circles; with ``on_arc`` only points on both sweeps."""
+        """Intersections of the two arcs' circles, in order along this arc.
+
+        With ``on_arc`` only points on both sweeps are kept. Two arcs on the
+        same circle (centers and radii within ``EPSILON``) have no isolated
+        circle intersections, so without ``on_arc`` they give none; with
+        ``on_arc`` the ends of the portion they share are returned: one point
+        where they only touch, two where they overlap, none where they are
+        apart. An end of the shared portion is an endpoint of one arc that
+        lies on the other arc (within ``EPSILON`` of its circle as well as
+        inside its sweep); a full circle has no ends, so its arbitrary start
+        point is never reported.
+        """
+        same_circle = const.is_zero(self.center.distance(other.center)) and const.is_zero(self.radius - other.radius)
+        if same_circle:
+            if not on_arc:
+                return []
+            ends: list[P] = []
+            for arc in (self, other):
+                if not arc.is_full_circle:
+                    ends.extend((arc.p1, arc.p2))
+            shared: list[P] = []
+            for p in sorted(ends, key=self.mu):
+                # Two candidates within 2 * EPSILON of each other, both on both arcs, are one end.
+                if (
+                    self.point_on_arc(p)
+                    and other.point_on_arc(p)
+                    and not any(p.almost_equal(q, 2.0 * const.EPSILON) for q in shared)
+                ):
+                    shared.append(p)
+            return shared
         points = intersect_circles(self.center, self.radius, other.center, other.radius)
-        if not on_arc:
-            return list(points)
-        return [p for p in points if self._in_sweep(p) and other._in_sweep(p)]
+        if on_arc:
+            points = tuple(p for p in points if self._in_sweep(p) and other._in_sweep(p))
+        return sorted(points, key=self.mu)
 
     # ----- protocol -----------------------------------------------------
 
@@ -480,6 +539,11 @@ class Arc:
     ) -> str:
         """SVG elliptical-arc path data for this circular arc.
 
+        A full circle is written as two half turns through the point
+        opposite ``p1``: SVG treats an arc command whose endpoints coincide
+        as if it were omitted. Without ``add_prefix`` the second half is a
+        further parameter set of the same command.
+
         See https://www.w3.org/TR/SVG11/paths.html#PathDataEllipticalArcCommands.
         """
         fmt = util.float_formatter(scale=scale, precision=precision)
@@ -487,58 +551,67 @@ class Arc:
         if add_move:
             prefix = f"M {fmt(self.p1.x)},{fmt(self.p1.y)} {prefix}"
         r = fmt(self.radius)
-        return f"{prefix}{r},{r} 0 {self.large_arc_flag} {self.sweep_flag} {fmt(self.p2.x)},{fmt(self.p2.y)}"
+        end = f"{fmt(self.p2.x)},{fmt(self.p2.y)}"
+        if self.is_full_circle:
+            opposite = self.point_at(0.5)
+            joiner = " A " if add_prefix or add_move else " "
+            return f"{prefix}{r},{r} 0 0 {self.sweep_flag} {fmt(opposite.x)},{fmt(opposite.y)}{joiner}{r},{r} 0 0 {self.sweep_flag} {end}"
+        return f"{prefix}{r},{r} 0 {self.large_arc_flag} {self.sweep_flag} {end}"
 
 
 def calc_center(p1: P, p2: P, radius: float, angle: float) -> P:
     """Center of the arc through ``p1`` and ``p2`` with the given radius and signed sweep.
 
-    The center sits ``(chord / 2) * cot(angle / 2)`` to the left of the chord's
-    midpoint (negative values fall to the right), which is exact for a half
-    turn and stable near it. ``radius`` is only checked against the chord;
-    the ``Arc`` invariant verifies it against the result.
+    The center sits ``radius * cos(angle / 2)`` from the chord's midpoint
+    along the chord's left normal for a positive sweep (right for a negative
+    one; a major arc's cosine is negative, which puts the center on the far
+    side). The distance comes from the supplied radius and sweep, not from
+    the chord, so the rounding of the endpoints is not amplified for a
+    shallow arc, and it is exact at a half turn. Only an exactly zero sweep
+    is refused here; whether the sweep, radius and chord fit together is
+    decided by the ``Arc`` invariant.
 
     Raises:
         DegenerateGeometryError: If ``p1`` and ``p2`` coincide.
-        GeometryError: If the sweep is zero or the chord is longer than the diameter.
+        GeometryError: If the sweep is zero or not finite, or the chord is
+            longer than the diameter.
     """
     chord_vector = p2 - p1
     chord = chord_vector.length
     if chord < const.EPSILON:
         raise DegenerateGeometryError(f"cannot infer an arc center from coincident endpoints {p1}")
-    if const.is_zero(angle):
-        raise GeometryError(f"a zero sweep cannot join distinct endpoints {p1} and {p2}")
+    if not math.isfinite(angle) or angle == 0.0:
+        raise GeometryError(f"a sweep of {angle!r} cannot join distinct endpoints {p1} and {p2}")
     if chord > 2.0 * radius + const.EPSILON:
         raise GeometryError(f"chord {chord!r} is longer than the diameter {2.0 * radius!r}")
     mid = P((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0)
-    offset = (chord / 2.0) / math.tan(angle / 2.0)
-    return mid + chord_vector.normal() * (offset / chord)
+    height = radius * math.cos(angle / 2.0) * (1.0 if angle > 0.0 else -1.0)
+    return mid + chord_vector.normal() * (height / chord)
 
 
 def intersect_circles(c1: P, r1: float, c2: P, r2: float) -> tuple[P, ...]:
     """Intersections of two circles.
 
     Returns two points if the circles intersect, one if they are tangent
-    (externally or internally), and none if they are apart, nested, or
-    coincident.
+    within ``EPSILON`` (externally or internally), and none if they are
+    apart, nested, or concentric. All tests are absolute distances.
 
     See http://mathworld.wolfram.com/Circle-CircleIntersection.html.
     """
     d = c1.distance(c2)
-    apart = d > r1 + r2 and not const.float_eq(d, r1 + r2)
-    nested = d < abs(r1 - r2) and not const.float_eq(d, abs(r1 - r2))
-    if const.is_zero(d) or apart or nested:
+    if const.is_zero(d):
         return ()
     direction = (c2 - c1) / d
-    if const.float_eq(d, r1 + r2):
+    if const.is_zero(d - (r1 + r2)):
         return (c1 + direction * r1,)
-    if const.float_eq(d, abs(r1 - r2)):
+    if const.is_zero(d - abs(r1 - r2)):
         return (c1 + direction * (r1 if r1 > r2 else -r1),)
-    a = (d * d - r2 * r2 + r1 * r1) / (2.0 * d)
-    h2 = r1 * r1 - a * a
-    if h2 < 0.0:
+    if d > r1 + r2 or d < abs(r1 - r2):
         return ()
-    h = math.sqrt(h2)
+    a = (d * d - r2 * r2 + r1 * r1) / (2.0 * d)
     foot = c1 + direction * a
-    side = direction.normal() * h
+    h2 = r1 * r1 - a * a
+    if h2 <= 0.0:
+        return (foot,)
+    side = direction.normal() * math.sqrt(h2)
     return (foot + side, foot - side)

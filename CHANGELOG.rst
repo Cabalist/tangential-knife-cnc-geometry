@@ -51,47 +51,114 @@ Geometry
 * ``Arc`` validates every construction (endpoints on the circle within
   ``EPSILON``, sweep consistent with the endpoints) and raises
   ``GeometryError`` otherwise; ``from_sweep`` computes the center stably,
-  including at and near a half turn. All angular queries (``mu``,
+  including at and near a half turn, and accepts any non-zero sweep (a
+  shallow arc at a large radius is valid). All angular queries (``mu``,
   ``point_on_arc``, ``point_inside``, ``subdivide_at_point``, ``height``,
   ``normal_projection_point``, ``bounding_box``) are correct for any sweep,
-  including more than half a turn and clockwise arcs. New:
+  including more than half a turn and clockwise arcs, and every "on the
+  circle" test (``point_on_arc``, ``intersect_line`` tangency,
+  ``intersect_circles`` tangency) uses ``EPSILON`` as the absolute distance
+  the constructor used. The tangent at each end is derived from that end's
+  stored point. ``calc_center`` places the center ``radius * cos(angle/2)``
+  from the chord, so shallow arcs at any orientation construct. ``offset``
+  builds its endpoints on the new circle from the sweep. Intersections are
+  ordered along the receiving arc; two arcs on one circle report the ends
+  of their shared portion with ``on_arc``. ``subdivide_equal`` and
+  ``split_max_sweep`` refuse to make pieces shorter than ``EPSILON``. New:
   ``subdivide_equal``, ``split_max_sweep``, ``is_clockwise``, ``direction``,
   tangent vectors, ``tangent_at``. ``extend`` extends. ``offset(+d)`` is
-  left of travel, like ``Line.offset``.
+  left of travel, like ``Line.offset``. ``to_svg_path`` writes a full
+  circle as two half turns.
 * ``Line``: cross-product and parameter tolerances are distances, so
   ``point_on_line``, ``is_parallel``, ``which_side`` and intersections do not
   depend on the segment's length; collinear overlapping segments intersect;
-  ``crosses`` is strict on both segments and symmetric; ``same_side`` is
-  fixed; ``shift`` and ``extend`` kept. One ``segment`` flag on intersections.
+  segment intersections and ``crosses`` are decided by the endpoints, so
+  long, nearly parallel segments that cross are reported (only infinite
+  lines treat directions within ``EPSILON`` as parallel); ``crosses`` is
+  strict on both segments and symmetric; ``same_side`` is fixed; ``shift``
+  and ``extend`` kept. One ``segment`` flag on intersections.
 * ``CubicBezier``: ``from_quadratic`` (exact); tangents fall back through
-  coincident control points; ``inflections`` and ``find_extrema`` are
-  scale-independent and never fabricate roots; ``line_intersection`` handles
-  degree-elevated and symmetric curves and honours ``segment=True``;
-  ``length`` is bounded and rejects non-positive tolerances.
-* ``biarc_approximation(tolerance, *, max_depth, max_arc_angle, strict)``:
-  two-sided Hausdorff check, straight pieces become lines only when their
-  tangents follow the chord, so tangent continuity holds at every joint;
-  the only corners in the output are genuine sub-``EPSILON`` cusps of the
-  source curve. ``max_arc_angle`` splits arcs to a maximum sweep;
-  ``strict`` raises ``ApproximationError`` when ``max_depth`` is exhausted.
-  Tolerances below ``EPSILON`` are refused.
+  coincident control points; ``inflections`` is scale-independent;
+  ``find_extrema`` solves each axis on its own with a stable quadratic
+  formula, so a long thin curve keeps its thin extent and ``bounding_box``
+  always contains the curve; ``intersect_line(line, *, on_line=False)``
+  (renamed from ``line_intersection``) finds roots by bisection between the
+  polynomial's critical points, so every degree is located to machine
+  precision, tangencies are reported once, and ``on_line`` restricts to the
+  line segment; ``length`` is bounded and rejects non-positive tolerances.
+* ``biarc_approximation(tolerance=0.001, *, max_depth=8, max_arc_angle=None,
+  strict=True)``: computed relative to the curve's start point, so joints
+  stay tangent-continuous within ``EPSILON`` anywhere in the coordinate
+  envelope; sampled two-sided distance check (documented as an estimate);
+  straight pieces become lines only when their tangents follow the chord,
+  so tangent continuity holds at every joint and the only corners in the
+  output are genuine sub-``EPSILON`` cusps of the source curve.
+  ``max_arc_angle`` splits arcs to a maximum sweep. ``strict`` is the
+  default: a piece that cannot meet the tolerance within ``max_depth``
+  raises ``ApproximationError``; ``strict=False`` returns the best effort.
+  Tolerances below ``EPSILON`` are refused. Pieces shorter than ``EPSILON``
+  are absorbed by their neighbours (at either end of the chain) so the
+  output stays exactly connected with nothing degenerate; a piece whose
+  ends coincide is halved regardless of ``max_depth``; a non-degenerate
+  curve never yields ``[]`` (``ApproximationError`` if nothing at least
+  ``EPSILON`` long can span it); a ``max_arc_angle`` that would need arcs
+  shorter than ``EPSILON`` raises ``GeometryError``. Two arcs of a biarc
+  are merged only when the merged arc is valid. ``is_degenerate`` is the
+  control points' extent, so a folded hairpin without extent is degenerate.
+  ``hausdorff_distance`` takes any sequence of segments and rejects an
+  empty one or a sample count below 1.
 * ``segment``: ``Segment`` protocol, ``Path``, ``path_reversed``,
   ``path_length``, ``path_bounding_box``, ``path_is_closed``,
-  ``polyline_to_path``, ``path_to_polyline``, ``nearest_vertex``,
-  ``heading_change``, ``segments_are_g1`` with explicit tolerances,
-  ``split_path``, ``split_path_where``, ``path_start_at``.
-* ``const``: ``set_epsilon`` validates before mutating; new ``cell``,
-  ``is_zero_rel``, ``cross_is_zero``, ``is_parallel``; ``angle_eq`` for
-  direction angles. Removed ``EPSILON_MINUS``, the hash primes, ``MAX_XY``,
-  ``float_eq1``/``float_eq2`` and ``DEBUG``. The ``DEBUG`` environment
-  variable no longer does anything.
+  ``polyline_to_path``, ``path_to_polyline``, ``nearest_vertex`` (every
+  vertex, including an open path's final point), ``heading_change`` (no
+  tolerance of its own), ``segments_are_g1`` with explicit tolerances that
+  are honoured however small, ``split_path``, ``split_path_where``,
+  ``path_start_at``. The helpers that return segments are generic and keep
+  the concrete segment type of their input.
+* ``const``: ``float_eq`` is an absolute comparison at every magnitude;
+  ``angle_eq`` treats directions a whole turn apart as equal; ``set_epsilon``
+  validates (``MIN_EPSILON`` = 1e-15 to below 1) and computes every derived
+  constant before assigning any; ``cross_is_zero`` and ``is_parallel`` treat
+  an exactly zero cross product as parallel at any scale, so coincident
+  points are collinear. New ``cell``, ``is_zero_rel``, ``cross_is_zero``,
+  ``is_parallel``, ``MIN_EPSILON``. Removed ``EPSILON_MINUS``, the hash
+  primes, ``MAX_XY``, ``float_eq1``/``float_eq2`` and ``DEBUG``. The
+  ``DEBUG`` environment variable no longer does anything. ``angle_eq``
+  reduces with a signed remainder, so it is exact near zero and symmetric
+  at any tolerance. The documentation distinguishes the numerical floor
+  (``EPSILON``, where the library promises self-consistency only) from the
+  physical floor (the process resolution, where tolerances belong).
+* ``P`` refuses infinite and NaN coordinates at construction.
 * ``util``: ``float_formatter`` strips zeros only after a decimal point and is
-  cached; ``normalize_angle`` and ``calc_rotation`` unchanged.
+  cached; ``calc_rotation`` returns the exact signed remainder in
+  ``(-pi, pi]`` with no tolerance applied; ``normalize_angle`` unchanged.
+* ``CubicBezier.intersect_line``: a curve whose control points lie along
+  the line (straight or doubling back) reports the ends of its extent along
+  the line, clipped to the segment with ``on_line``.
+* ``Arc.intersect_arc`` on one circle reports only endpoints that lie on
+  both arcs (within ``EPSILON`` of the circle and inside the sweep), and a
+  full circle contributes no ends. ``Line`` collinearity requires directions
+  within ``EPSILON`` as well as position, so a short segment inside a line's
+  tolerance band at a visible angle is a crossing. ``normalize_angle`` stays
+  inside its half-open interval at the boundaries.
 
 Errors
 ------
 
-``GeometryError(ValueError)`` for invalid public input,
-``DegenerateGeometryError`` for coincident or zero-size input,
-``ApproximationError`` for a failed strict approximation. Unsupported
-operator operands raise ``TypeError``. No public path relies on ``assert``.
+``GeometryError(ValueError)`` for invalid geometric input (including
+non-finite coordinates), ``DegenerateGeometryError`` for coincident or
+zero-size input, ``ApproximationError`` for a biarc approximation that could
+not meet its tolerance. Ordinary Python exceptions keep their meaning: a bad
+segment index is an ``IndexError``, unsupported operator operands a
+``TypeError``, ``p / 0`` a ``ZeroDivisionError``, an out-of-range
+``set_epsilon`` a ``ValueError``. No public path relies on ``assert``.
+
+Tooling
+-------
+
+Ruff enforces ``FBT`` (keyword-only booleans), ``N``, ``A``, ``ERA`` and
+``S101`` (no ``assert`` in library code) in addition to the base rule set;
+ty and pyrefly run with no suppressions beyond ``unnecessary-type-conversion``
+for ``P.of``. CI runs on pushes to ``main``, pull requests and release tags
+with ``uv sync --locked``, and the publish workflow runs it as a gate before
+building a release.

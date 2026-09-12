@@ -9,7 +9,16 @@ import random
 
 import pytest
 
-from geom2d import DegenerateGeometryError, GeometryError, P, angle_eq, const, float_eq, normalize_angle
+from geom2d import (
+    DegenerateGeometryError,
+    GeometryError,
+    P,
+    angle_eq,
+    const,
+    float_eq,
+    normalize_angle,
+    segments_are_g1,
+)
 from geom2d.arc import Arc, calc_center, intersect_circles
 from geom2d.box import Box
 from geom2d.line import Line
@@ -89,10 +98,40 @@ def test_arcs_near_half_turn_construct():
 
 
 def test_small_sweep_at_large_radius_is_valid():
-    arc = Arc(P(1e6, 0), P(1e6 * math.cos(1e-9), 1e6 * math.sin(1e-9)), 1e6, 1e-9, ORIGIN)
+    p2 = P(1e6 * math.cos(1e-9), 1e6 * math.sin(1e-9))
+    arc = Arc(P(1e6, 0), p2, 1e6, 1e-9, ORIGIN)
     assert not arc.is_degenerate
     assert arc.length == pytest.approx(1e-3)
     assert arc.mu(arc.point_at(0.5)) == pytest.approx(0.5, abs=1e-6)
+    # from_sweep accepts the same shallow arc: degeneracy is about the geometry, not the angle's size.
+    # Rounding p2.x to 1e6 tilts the 1e-3 chord by 5e-10 rad, which moves a center 1e6 away by 5e-4;
+    # the arc through the stored endpoints is still exact.
+    swept = Arc.from_sweep(P(1e6, 0), p2, 1e6, 1e-9)
+    assert swept.center.distance(ORIGIN) < 1e-3
+    assert swept.length == pytest.approx(1e-3)
+    assert swept.midpoint.almost_equal(arc.midpoint)
+    with pytest.raises(GeometryError):  # a sweep that cannot reach p2 at this radius is still refused
+        Arc.from_sweep(P(1, 0), P(0, 1), 1.0, 1e-12)
+
+
+def test_from_sweep_accepts_shallow_arcs_at_any_orientation():
+    # The center is placed radius * cos(angle / 2) from the chord, so the chord's rounding is not
+    # amplified through cot(angle / 2) for shallow sweeps.
+    p1 = P.from_polar(1000, 0.3)
+    p2 = P.from_polar(1000, 0.300001)
+    swept = Arc.from_sweep(p1, p2, 1000, 1e-6)
+    assert Arc(p1, p2, 1000, 1e-6, ORIGIN).midpoint.almost_equal(swept.midpoint)
+    assert swept.center.distance(ORIGIN) < 1e-6  # the chord's 1e-13 rounding moves a center 1000 away by up to 1e-7
+    for radius in (1.0, 1000.0, 1e5):
+        for start in (0.3, 2.0, -1.0):
+            for sweep in (1e-6, -1e-6, 1e-9 * 1e5 / radius):
+                if radius * abs(sweep) < 2 * const.EPSILON:
+                    continue
+                arc = Arc.from_sweep(P.from_polar(radius, start), P.from_polar(radius, start + sweep), radius, sweep)
+                assert arc.length == pytest.approx(radius * abs(sweep), rel=1e-6)
+                # The true midpoint lies on the constructed arc even where the chord's rounding leaves
+                # the center's exact position along the chord ill-determined (see the coordinate envelope).
+                assert arc.distance_to_point(P.from_polar(radius, start + sweep / 2), segment=True) < const.EPSILON
 
 
 def test_tiny_arc_tangents_agree_with_tangent_at():
@@ -118,7 +157,7 @@ def test_tiny_arc_tangents_agree_with_tangent_at():
         (P(1, 0), P(0, 1), math.nan, PI / 2, P(0, 0)),
     ],
 )
-def test_invariant_rejects_inconsistent_arcs(p1, p2, radius, angle, center):
+def test_invariant_rejects_inconsistent_arcs(p1: P, p2: P, radius: float, angle: float, center: P):
     # Inconsistent geometry must raise in every mode: no debug flag, no assert.
     with pytest.raises(GeometryError):
         Arc(p1, p2, radius, angle, center)
@@ -199,6 +238,16 @@ def test_start_angle_with_offset_center():
     arc = Arc(P(6, 5), P(5, 6), 1.0, PI / 2, P(5, 5))
     assert arc.start_angle == pytest.approx(0.0)
     assert arc.end_angle == pytest.approx(PI / 2)
+
+
+def test_end_tangent_is_derived_from_p2():
+    # The invariant allows p2 to sit up to EPSILON off the swept position; the end tangent
+    # follows the stored p2, so two arcs meeting at a shared point agree on their tangent there.
+    nudged = Arc(P(1, 0), P(0.5e-8, 1), 1.0, PI / 2, ORIGIN)
+    assert abs(nudged.end_tangent.dot(nudged.p2 - nudged.center)) < 1e-15
+    assert nudged.end_tangent.almost_equal(nudged.tangent_at(1.0))
+    following = Arc.from_sweep(nudged.p2, P(-1, 0.5e-8), 1.0, PI / 2)
+    assert segments_are_g1(nudged, following)
 
 
 def test_tangent_angles_and_vectors():
@@ -358,7 +407,69 @@ def test_offset_is_left_of_travel():
     assert CCW_Q.offset(0.0) is CCW_Q
 
 
+def test_offset_builds_endpoints_on_the_new_circle():
+    # The invariant allows endpoints up to EPSILON off the circle; an outward offset must not
+    # scale that slack up with the radius.
+    slack = Arc(P(1.000000007, 0), P(0, 1.000000007), 1.0, PI / 2, ORIGIN)
+    out = slack.offset(-1)
+    assert out.radius == 2.0
+    assert abs(out.p1.distance(ORIGIN) - 2.0) < 1e-15
+    assert abs(out.p2.distance(ORIGIN) - 2.0) < 1e-15
+    assert float_eq(out.offset(1).radius, 1.0)
+    angular = Arc(P(1, 0), P.from_polar(1, PI / 2 + 0.9 * const.EPSILON), 1.0, PI / 2, ORIGIN)
+    wide = angular.offset(-3)
+    assert wide.radius == 4.0
+    assert wide.p2.almost_equal(P(0, 4))
+    for arc in FAMILIES:
+        moved = arc.offset(-0.5)
+        assert float_eq(moved.angle, arc.angle)
+        assert angle_eq(moved.start_tangent_angle, arc.start_tangent_angle)
+        assert angle_eq(moved.end_tangent_angle, arc.end_tangent_angle)
+
+
+def test_split_refuses_degenerate_pieces():
+    # An arc 1.5e-8 long cannot be halved without degenerate pieces.
+    r = 5e-9
+    short = Arc(P(r, 0), P(-r, 0), r, PI, ORIGIN)
+    assert short.subdivide_equal(1) == [short]
+    with pytest.raises(GeometryError):
+        short.subdivide_equal(2)
+    with pytest.raises(GeometryError):
+        short.split_max_sweep(1.0)
+    longer = Arc(P(2 * r, 0), P(-2 * r, 0), 2 * r, PI, ORIGIN)  # 3.1e-8 long: three pieces of 1.05e-8
+    assert len(longer.subdivide_equal(3)) == 3
+
+
 # ----- relations ---------------------------------------------------------------------
+
+
+def test_circle_membership_is_absolute_at_any_radius():
+    # The same EPSILON that validated the arc decides every later query.
+    big = Arc.from_sweep(P(1000, 0), P(0, 1000), 1000.0, PI / 2)
+    assert big.point_on_arc(P.from_polar(1000 + 0.5e-8, PI / 4))
+    assert not big.point_on_arc(P.from_polar(1000 + 1e-6, PI / 4))
+    assert intersect_circles(ORIGIN, 1000.0, P(2000 + 1e-6, 0), 1000.0) == ()
+    assert len(intersect_circles(ORIGIN, 1000.0, P(2000 + 0.5e-8, 0), 1000.0)) == 1
+    assert len(intersect_circles(ORIGIN, 1000.0, P(2000 - 1e-6, 0), 1000.0)) == 2
+    assert big.intersect_line(Line(P(-1, 1000 + 1e-6), P(1, 1000 + 1e-6))) == []
+    grazing = big.intersect_line(Line(P(-1, 1000 + 0.5e-8), P(1, 1000 + 0.5e-8)))
+    assert len(grazing) == 1
+    assert grazing[0].almost_equal(P(0, 1000))
+
+
+def test_queries_far_from_the_origin():
+    shift = P(1e6, 1e6)
+    arc = Arc.from_sweep(P(1, 0) + shift, P(0, 1) + shift, 1.0, PI / 2)
+    assert arc.center.almost_equal(shift)
+    assert arc.point_on_arc(shift + P.from_polar(1.0, PI / 4))
+    assert not arc.point_on_arc(shift + P.from_polar(1.0 + 1e-6, PI / 4))
+    assert arc.mu(arc.point_at(0.3)) == pytest.approx(0.3, abs=1e-9)
+    assert arc.bounding_box == Box(shift, shift + P(1, 1))
+    hits = arc.intersect_line(Line(shift + P(-2, 0.5), shift + P(2, 0.5)), on_arc=True)
+    assert len(hits) == 1
+    assert hits[0].almost_equal(shift + P(math.sqrt(0.75), 0.5))
+    for part_a, part_b in itertools.pairwise(arc.split_max_sweep(PI / 8)):
+        assert segments_are_g1(part_a, part_b)
 
 
 def test_point_on_arc_for_semicircles_and_major_arcs():
@@ -440,6 +551,94 @@ def test_intersect_line():
     assert {p.almost_equal(P(1, 0)) or p.almost_equal(P(1, 2)) for p in both} == {True}
 
 
+def test_arcs_on_one_circle_report_their_shared_portion():
+    first = Arc.from_sweep(P(1, 0), P(0, 1), 1.0, PI / 2)
+    second = Arc.from_sweep(P(0, 1), P(-1, 0), 1.0, PI / 2)
+    assert first.intersect_arc(second, on_arc=True) == [P(0, 1)]  # they touch
+    assert second.intersect_arc(first, on_arc=True) == [P(0, 1)]
+    assert first.intersect_arc(second) == []  # coincident circles have no isolated intersections
+    upper = Arc.from_sweep(P(1, 0), P(-1, 0), 1.0, PI)
+    assert upper.intersect_arc(second, on_arc=True) == [P(0, 1), P(-1, 0)]  # the overlap, in upper's order
+    assert second.intersect_arc(upper, on_arc=True) == [P(0, 1), P(-1, 0)]
+    inner = Arc.from_sweep(P.from_polar(1, 0.5), P.from_polar(1, 1.5), 1.0, 1.0)
+    assert upper.intersect_arc(inner, on_arc=True) == [inner.p1, inner.p2]  # contained
+    lower_left = Arc.from_sweep(P(-1, 0), P(0, -1), 1.0, PI / 2)
+    assert first.intersect_arc(lower_left, on_arc=True) == []  # apart on the same circle
+    clockwise = upper.reversed()
+    assert clockwise.intersect_arc(second, on_arc=True) == [P(-1, 0), P(0, 1)]  # ordered along the receiver
+
+
+def test_nearly_coincident_arcs_report_only_points_on_both():
+    eps = const.EPSILON
+    first = Arc.from_sweep(P(1, 0), P(0, 1), 1.0, PI / 2)
+    shifted_center = P(0.75 * eps, 0)
+    second = Arc(
+        shifted_center + P(1 + 0.75 * eps, 0),
+        shifted_center + P(0, 1 + 0.75 * eps),
+        1 + 0.75 * eps,
+        PI / 2,
+        shifted_center,
+    )
+    for receiver, other in ((first, second), (second, first)):
+        hits = receiver.intersect_arc(other, on_arc=True)
+        assert hits
+        for p in hits:
+            assert first.point_on_arc(p)
+            assert second.point_on_arc(p)
+        assert not any(p.almost_equal(first.p1, 1.2 * eps) for p in hits)  # 1.5 EPSILON off the other circle
+
+
+def test_full_circles_have_no_boundary_of_their_own():
+    circle = Arc(P(1, 0), P(1, 0), 1.0, math.tau, ORIGIN)
+    right = Arc.from_sweep(P(0, -1), P(0, 1), 1.0, PI)
+    assert circle.intersect_arc(right, on_arc=True) == [P(0, 1), P(0, -1)]  # in the circle's order from (1, 0)
+    assert right.intersect_arc(circle, on_arc=True) == [P(0, -1), P(0, 1)]
+    elsewhere = Arc(P(0.6, 0.8), P(0.6, 0.8), 1.0, math.tau, ORIGIN)
+    assert set(elsewhere.intersect_arc(right, on_arc=True)) == {P(0, 1), P(0, -1)}
+    assert circle.intersect_arc(elsewhere, on_arc=True) == []  # the whole circle is shared: no ends
+
+
+def test_arc_intersections_lie_on_both_shapes_and_survive_reversal():
+    rng = random.Random(29)
+    checked = 0
+    for _ in range(400):
+        c1 = P(rng.uniform(-2, 2), rng.uniform(-2, 2))
+        c2 = P(rng.uniform(-2, 2), rng.uniform(-2, 2))
+        a = Arc.from_sweep(c1 + P.from_polar(1, 0.3), c1 + P.from_polar(1, 0.3 + 2.5), 1.0, 2.5)
+        b = Arc.from_sweep(c2 + P.from_polar(1.5, -1), c2 + P.from_polar(1.5, -1 - 2.0), 1.5, -2.0)
+        line = Line(P(rng.uniform(-4, 4), rng.uniform(-4, 4)), P(rng.uniform(-4, 4), rng.uniform(-4, 4)))
+        hits = a.intersect_arc(b, on_arc=True)
+        for p in hits:
+            assert a.point_on_arc(p)
+            assert b.point_on_arc(p)
+        for variant in (b.reversed(),):
+            assert len(a.intersect_arc(variant, on_arc=True)) == len(hits)
+        assert len(b.intersect_arc(a, on_arc=True)) == len(hits)
+        if not line.is_degenerate:
+            line_hits = a.intersect_line(line, on_arc=True, on_line=True)
+            for p in line_hits:
+                assert a.point_on_arc(p)
+                assert line.point_on_line(p, segment=True)
+            assert len(a.reversed().intersect_line(line.reversed(), on_arc=True, on_line=True)) == len(line_hits)
+            checked += len(line_hits)
+        checked += len(hits)
+    assert checked > 50
+
+
+def test_intersections_are_ordered_along_the_receiver():
+    arc = Arc.from_sweep(P.from_polar(1, PI / 4), P.from_polar(1, 7 * PI / 4), 1.0, 3 * PI / 2)
+    upward = Line(P(0, -5), P(0, 5))
+    for line in (upward, upward.reversed()):
+        params = [arc.mu(p) for p in arc.intersect_line(line, on_arc=True)]
+        assert params == pytest.approx([1 / 6, 5 / 6])
+    circle_params = [arc.mu(p) for p in arc.intersect_line(Line(P(-5, 0.5), P(5, 0.5)))]
+    assert circle_params == sorted(circle_params)
+    other = Arc.from_sweep(P(2, 1), P(0, 1), 1.0, PI)  # centred (1, 1): meets the unit circle twice
+    for candidate in (other, other.reversed()):
+        params = [arc.mu(p) for p in arc.intersect_arc(candidate)]
+        assert params == sorted(params)
+
+
 def test_intersect_circles_and_arcs():
     # Externally tangent circles meet r1 along the center line, not at the midpoint of the centers.
     assert intersect_circles(ORIGIN, 1.0, P(4, 0), 3.0) == (P(1, 0),)
@@ -505,6 +704,17 @@ def test_to_svg_path_and_str():
     assert str(CCW_Q).startswith("Arc((1.00000000, 0.00000000), (0.00000000, 1.00000000), r=1.00000000, a=1.57079633")
 
 
+def test_full_circle_svg_path_is_two_half_turns():
+    # SVG drops an arc whose endpoints coincide, so a full circle needs two commands.
+    circle = Arc(P(1, 0), P(1, 0), 1.0, math.tau, ORIGIN)
+    assert circle.to_svg_path(add_move=True) == "M 1,0 A 1,1 0 0 1 -1,0 A 1,1 0 0 1 1,0"
+    assert circle.to_svg_path(add_prefix=False) == "1,1 0 0 1 -1,0 1,1 0 0 1 1,0"
+    clockwise = Arc(P(1, 0), P(1, 0), 1.0, -math.tau, ORIGIN)
+    assert clockwise.to_svg_path() == "A 1,1 0 0 0 -1,0 A 1,1 0 0 0 1,0"
+    nearly = Arc.from_sweep(P(1, 0), P.from_polar(1, -0.1), 1.0, math.tau - 0.1)  # not a full circle: one command
+    assert nearly.to_svg_path().count("A") == 1
+
+
 def test_calc_center_all_families():
     for p1, p2, angle in [
         (P(1, 0), P(0, 1), PI / 2),
@@ -515,7 +725,7 @@ def test_calc_center_all_families():
         assert calc_center(p1, p2, 1.0, angle).almost_equal(ORIGIN)
 
 
-def test_epsilon_governs_the_invariant(restore_epsilon):
+def test_epsilon_governs_the_invariant(restore_epsilon: None):
     with pytest.raises(GeometryError):
         Arc(P(1, 0), P(0, 1), 1.0, PI / 2, P(1e-4, 0))
     const.set_epsilon(1e-3)

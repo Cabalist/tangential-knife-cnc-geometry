@@ -151,7 +151,7 @@ def test_which_side_and_same_side():
     assert H.which_side(P(5, 1)) == 1
     assert H.which_side(P(5, -1)) == -1
     assert H.which_side(P(5, 0)) == 0
-    # A1 finding: same_side compared c1 with itself.
+    # Opposite sides are never reported as the same side.
     assert not H.same_side(P(5, 1), P(5, -1))
     assert H.same_side(P(5, 1), P(7, 3))
     assert H.same_side(P(5, 0), P(7, -3))
@@ -204,7 +204,64 @@ def test_intersection_tiny_perpendicular_segments():
     h = Line(P(0, 0), P(s, 0))
     v = Line(P(s / 2, -s), P(s / 2, s))
     assert h.intersects(v, segment=True)
-    assert h.intersection(v, segment=True).almost_equal(P(s / 2, 0), tolerance=1e-12)
+    hit = h.intersection(v, segment=True)
+    assert hit is not None
+    assert hit.almost_equal(P(s / 2, 0), tolerance=1e-12)
+
+
+def test_nearly_parallel_long_segments_still_cross():
+    # The directions differ by 1e-9 rad, below EPSILON, yet the segments cross at (5e5, 0):
+    # segment intersections are decided by the endpoints, not by an angular parallel test.
+    a = Line(P(0, 0), P(1e6, 0))
+    b = Line(P(0, -0.0005), P(1e6, 0.0005))
+    hit = a.intersection(b, segment=True)
+    assert hit is not None
+    assert hit.almost_equal(P(5e5, 0), tolerance=1e-6)
+    assert a.crosses(b)
+    assert b.crosses(a)
+    assert a.intersects(b, segment=True)
+    assert a.is_parallel(b)  # as a direction test, still true
+    assert a.intersection(b) is None  # infinite lines within EPSILON of parallel are treated as parallel
+    # Under rotation, scaling and operand reversal the answer is the same.
+    turn = 0.7
+    for scale in (1.0, 1e-3):
+        ra = Line(P.from_polar(0, turn), P.from_polar(1e6 * scale, turn))
+        n = P.from_polar(1.0, turn + math.pi / 2)
+        rb = Line(ra.p1 - n * (0.0005 * scale), ra.p2 + n * (0.0005 * scale))
+        for first, second in ((ra, rb), (rb, ra), (ra, rb.reversed()), (ra.reversed(), rb)):
+            point = first.intersection(second, segment=True)
+            assert point is not None
+            # Along nearly parallel lines the crossing is ill-determined (coordinate rounding over a
+            # 0.001 offset), so the check is that the point is on both lines, near their middles.
+            assert first.distance_to_point(point) < 1e-8
+            assert second.distance_to_point(point) < 1e-8
+            assert first.intersection_mu(second, segment=True) == pytest.approx(0.5, abs=1e-6)
+            assert first.crosses(second)
+    # Nearly parallel segments that do not reach each other still do not intersect.
+    apart = Line(P(0, 0.0005), P(1e6, 0.0015))
+    assert a.intersection(apart, segment=True) is None
+    assert not a.crosses(apart)
+    # Collinear within EPSILON stays an overlap, not a crossing.
+    tilted = Line(P(5, 1e-12), P(15, 2e-12))
+    assert H.intersection(tilted, segment=True) == P(5, 0)
+    assert not H.crosses(tilted)
+
+
+def test_a_short_segment_inside_the_tolerance_band_is_not_collinear():
+    # b's endpoints are within EPSILON of a's line, but b's own line crosses a at (5, 0) at a visible angle.
+    a = Line(P(0, 0), P(10, 0))
+    b = Line(P(4.995, -4e-9), P(5.005, 4e-9))
+    for first, second in ((a, b), (b, a)):
+        for segment in (False, True):
+            hit = first.intersection(second, segment=segment)
+            assert hit is not None
+            assert hit.almost_equal(P(5, 0))
+            assert first.point_on_line(hit)
+            assert second.point_on_line(hit)
+    longer = b.extend(50, from_midpoint=True)  # the same infinite line
+    same = a.intersection(longer)
+    assert same is not None
+    assert same.almost_equal(P(5, 0))
 
 
 def test_intersection_parallel_and_collinear():
@@ -260,7 +317,7 @@ def test_to_svg_path():
     assert str(ln) == "Line((1.50000000, 2.00000000), (3.00000000, 4.25000000))"
 
 
-def test_epsilon_change_applies_at_call_time(restore_epsilon):
+def test_epsilon_change_applies_at_call_time(restore_epsilon: None):
     ln = Line(P(0, 0), P(10, 0))
     assert not ln.point_on_line(P(5, 1e-4))
     const.set_epsilon(1e-3)

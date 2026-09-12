@@ -14,25 +14,28 @@ def normalize_angle(angle: float, center: float = math.pi) -> float:
     """Normalize ``angle`` into a full turn centred on ``center``.
 
     ``normalize_angle(a)`` maps into ``[0, 2*pi)``;
-    ``normalize_angle(a, center=0.0)`` maps into ``[-pi, pi)``.
+    ``normalize_angle(a, center=0.0)`` maps into ``[-pi, pi)``. The result
+    is kept inside the half-open interval even when rounding of the modulo
+    would land on its upper end.
     """
-    return angle - (const.TAU * math.floor((angle + math.pi - center) / const.TAU))
+    low = center - math.pi
+    result = low + (angle - low) % const.TAU
+    if result >= center + math.pi:
+        result -= const.TAU
+    return result
 
 
 def calc_rotation(start_angle: float, end_angle: float) -> float:
-    """Return the shortest signed rotation from ``start_angle`` to ``end_angle``.
+    """Return the signed rotation that turns direction ``start_angle`` into ``end_angle``.
 
-    The result lies in ``[-pi, pi]``; positive is counter-clockwise.
-    Angles that are equal within ``EPSILON`` give ``0.0``.
+    The result lies in ``(-pi, pi]``; positive is counter-clockwise and a
+    half turn is reported as ``+pi``. The difference is reduced with a signed
+    remainder, so a rotation of ``-1e-16`` survives, and no tolerance is
+    applied: the caller decides with :func:`geom2d.const.is_zero` (at any
+    tolerance) whether the two directions agree.
     """
-    if const.float_eq(start_angle, end_angle):
-        return 0.0
-    rotation = normalize_angle(end_angle, 0.0) - normalize_angle(start_angle, 0.0)
-    if rotation < -math.pi:
-        rotation += const.TAU
-    elif rotation > math.pi:
-        rotation -= const.TAU
-    return rotation
+    rotation = math.remainder(end_angle - start_angle, const.TAU)
+    return math.pi if rotation == -math.pi else rotation
 
 
 @functools.lru_cache(maxsize=32)

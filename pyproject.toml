@@ -84,6 +84,12 @@ select = [
     "T20",
     "ISC",
     "TC",
+    "FBT",    # booleans are keyword-only
+    "N",      # pep8 naming
+    "A",      # no shadowed builtins
+    "ERA",    # no commented-out code
+    "S101",   # no assert in library code (tests may assert; see per-file-ignores)
+    "C90",    # cyclomatic complexity (default limit 10)
 ]
 ignore = [
     "E501",    # line too long (handled by the formatter)
@@ -96,7 +102,7 @@ ignore = [
     "PLR2004", # geometry constants (0.5, 2.0, pi/2) are not magic
     "TRY003",
 ]
-per-file-ignores = { "tests/**" = ["ANN", "PLR2004", "ARG001"] }
+per-file-ignores = { "tests/**" = ["ANN", "PLR2004", "ARG001", "S101"] }
 
 [tool.ruff.lint.isort]
 known-first-party = ["geom2d"]
@@ -118,10 +124,6 @@ redundant-cast = "error"
 unused-ignore-comment = "error"
 unused-type-ignore-comment = "error"
 
-[[tool.ty.overrides]]
-include = ["tests/**"]
-rules = { unresolved-attribute = "ignore" }
-
 [tool.pyrefly]
 min-severity = "warn"
 project-includes = ["src", "tests"]
@@ -133,16 +135,3 @@ preset = "strict"
 redundant-cast = "error"
 # P.of() normalises foreign numeric types with explicit float() calls.
 unnecessary-type-conversion = "ignore"
-# Every hit is a `key=lambda` passed to sorted/min/max over a typed iterable;
-# pyrefly does not yet solve the lambda's parameter from the sibling argument,
-# ty infers and checks the same lambdas.
-implicit-any-lambda = "ignore"
-
-[[tool.pyrefly.sub-config]]
-matches = "tests/**/*"
-
-[tool.pyrefly.sub-config.errors]
-implicit-any-empty-container = "ignore"
-implicit-any-parameter = "ignore"
-implicit-any-type-argument = "ignore"
-missing-attribute = "ignore"

@@ -42,7 +42,7 @@ def test_from_points_single_pass_generator():
 
 def test_from_path_unions_segment_boxes():
     class Seg:
-        def __init__(self, box):
+        def __init__(self, box: Box) -> None:
             self.bounding_box = box
 
     segs = [Seg(Box(P(0, 0), P(1, 1))), Seg(Box(P(-2, 3), P(0, 4)))]

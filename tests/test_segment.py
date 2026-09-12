@@ -55,15 +55,41 @@ class Wrapped:
         self.geom = geom
         self.tag = tag
 
-    p1 = property(lambda self: self.geom.p1)
-    p2 = property(lambda self: self.geom.p2)
-    length = property(lambda self: self.geom.length)
-    is_degenerate = property(lambda self: self.geom.is_degenerate)
-    start_tangent_angle = property(lambda self: self.geom.start_tangent_angle)
-    end_tangent_angle = property(lambda self: self.geom.end_tangent_angle)
-    start_tangent = property(lambda self: self.geom.start_tangent)
-    end_tangent = property(lambda self: self.geom.end_tangent)
-    bounding_box = property(lambda self: self.geom.bounding_box)
+    @property
+    def p1(self) -> P:
+        return self.geom.p1
+
+    @property
+    def p2(self) -> P:
+        return self.geom.p2
+
+    @property
+    def length(self) -> float:
+        return self.geom.length
+
+    @property
+    def is_degenerate(self) -> bool:
+        return self.geom.is_degenerate
+
+    @property
+    def start_tangent_angle(self) -> float:
+        return self.geom.start_tangent_angle
+
+    @property
+    def end_tangent_angle(self) -> float:
+        return self.geom.end_tangent_angle
+
+    @property
+    def start_tangent(self) -> P:
+        return self.geom.start_tangent
+
+    @property
+    def end_tangent(self) -> P:
+        return self.geom.end_tangent
+
+    @property
+    def bounding_box(self) -> Box:
+        return self.geom.bounding_box
 
     def reversed(self) -> Wrapped:
         return Wrapped(self.geom.reversed(), self.tag)
@@ -134,14 +160,19 @@ def test_kernel_classes_satisfy_the_protocol():
         assert angle_eq(rev.start_tangent_angle, math.atan2(-seg.end_tangent.y, -seg.end_tangent.x))
 
 
-def test_helpers_are_structural():
-    path: Path = [Wrapped(seg, "cut") for seg in rounded_rectangle()]
-    assert path_is_closed(path)
+def test_helpers_are_structural_and_keep_the_concrete_type():
+    path = [Wrapped(seg, "cut") for seg in rounded_rectangle()]
+    as_path: Path = path  # a list of wrappers is a Path
+    assert path_is_closed(as_path)
     assert path_length(path) == pytest.approx(2 * 8 + 2 * 4 + 2 * PI)
     assert path_bounding_box(path) == Box(P(0, 0), P(10, 6))
-    assert all(segments_are_g1(a, b) for a, b in itertools.pairwise(path))
-    assert all(isinstance(s, Wrapped) for s in path_reversed(path))
-    assert path_start_at(path, 3)[0].geom == path[3].geom  # type: ignore[attr-defined]
+    assert g1_everywhere(path)
+    # The helpers that return segments give back the wrapper type, so its extra data stays reachable.
+    assert path_reversed(path)[0].tag == "cut"
+    assert path_start_at(path, 3)[0].geom == path[3].geom
+    pieces = split_path_where(path, lambda a, b: a.tag != b.tag)
+    assert pieces == [path]
+    assert split_path(path, [4])[1][0].geom == path[4].geom
 
 
 # ----- whole-path values -------------------------------------------------------
@@ -168,6 +199,16 @@ def test_rounded_rectangle_round_trip_is_closed_and_g1():
             approximated.append(seg)
     assert path_is_closed(approximated)
     assert g1_everywhere(approximated)
+
+
+def test_offset_path_stays_closed_and_g1():
+    # Offsetting every segment of a rounded rectangle by the same distance keeps the joints
+    # shared and tangent-continuous: lines shift along their normals, arcs change radius.
+    for distance in (0.3, -0.5):
+        moved = [seg.offset(distance) for seg in rounded_rectangle()]
+        assert path_is_closed(moved)
+        assert g1_everywhere(moved)
+        assert path_length(moved) == pytest.approx(2 * 8 + 2 * 4 + 2 * PI * (1 - distance))
 
 
 def test_reversed_length_bbox():
@@ -202,6 +243,10 @@ def test_nearest_vertex():
     assert nearest_vertex(path, P(9.1, 6.2)) == 4  # start of the top edge is (9, 6)
     assert nearest_vertex(path, P(10.2, 5.1)) == 3  # start of the top-right arc is (10, 5)
     assert nearest_vertex(path, P(-1, -1)) == 0
+    assert nearest_vertex(path, P(1, -0.1)) == 0  # the closing point is vertex 0, not a ninth vertex
+    open_path = polyline_to_path([(0, 0), (1, 0), (2, 0)])
+    assert nearest_vertex(open_path, P(2.1, 0.1)) == 2  # an open path's final point is a vertex too
+    assert nearest_vertex(open_path, P(0.9, 0)) == 1
     with pytest.raises(GeometryError):
         nearest_vertex([], P(0, 0))
 
@@ -241,6 +286,11 @@ def test_segments_are_g1_with_explicit_tolerances():
     left2 = Line(P(1, 0), P(0, -1e-13))
     assert segments_are_g1(left1, left2)
     assert not segments_are_g1(left1, left2.reversed())
+    # A tighter tolerance than EPSILON is honoured: the heading change is not snapped first.
+    slight = Line(P(1, 0), P(1 + math.cos(5e-9), math.sin(5e-9)))
+    assert heading_change(a, slight) == pytest.approx(5e-9, rel=1e-6)
+    assert segments_are_g1(a, slight)
+    assert not segments_are_g1(a, slight, angle_tolerance=1e-12)
 
 
 # ----- splitting and rotating -----------------------------------------------------
@@ -283,7 +333,8 @@ def test_split_path_where_on_open_and_closed_paths():
     assert sum(len(p) for p in pieces) == len(two_corners)
     open_path = polyline_to_path([(0, 0), (1, 0), (2, 1), (3, 1)])
     assert [len(p) for p in split_path_where(open_path, lambda a, b: abs(heading_change(a, b)) > 0.1)] == [1, 1, 1]
-    assert split_path_where([], lambda _a, _b: True) == []
+    nothing: list[Line] = []
+    assert split_path_where(nothing, lambda _a, _b: True) == []
     single = [Line(P(0, 0), P(1, 0))]
     assert split_path_where(single, lambda _a, _b: True) == [single]
 
