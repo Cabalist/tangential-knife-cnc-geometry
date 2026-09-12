@@ -76,7 +76,10 @@ Development
     uv run prek run --all-files      # ruff check, ruff format, ty, pyrefly (prek.toml; CI runs the same)
     uv run pytest
     uv run python -O -m pytest
+    uv run --group docs sphinx-build -W docs docs/_build/html
 
-* Documentation: built from ``docs/`` with Sphinx (``uv sync --group docs``).
+* Python 3.14 is pinned by ``requires-python``, the checkers' settings and
+  CI; there is deliberately no ``.python-version`` file, because one shadows
+  the ``uv`` shim on machines that use pyenv.
 * License: LGPL v3. The library descends from Claude Zervas's utl-geom2d
   and keeps its license; the 1.0 rebuild is documented in ``CHANGELOG.rst``.
