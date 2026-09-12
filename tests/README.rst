@@ -4,7 +4,7 @@ Testing
 Install the development environment and run the checks::
 
     uv sync --group dev
-    uv run prek run --all-files      # ruff, ruff-format, ty, pyrefly
+    uv run prek run --all-files      # ruff check, ruff format, ty, pyrefly (prek.toml; CI runs the same)
     uv run pytest                    # xdist, random order
     uv run python -O -m pytest       # assertions stripped
 

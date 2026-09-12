@@ -156,9 +156,12 @@ segment index is an ``IndexError``, unsupported operator operands a
 Tooling
 -------
 
-Ruff enforces ``FBT`` (keyword-only booleans), ``N``, ``A``, ``ERA`` and
-``S101`` (no ``assert`` in library code) in addition to the base rule set;
-ty and pyrefly run with no suppressions beyond ``unnecessary-type-conversion``
-for ``P.of``. CI runs on pushes to ``main``, pull requests and release tags
-with ``uv sync --locked``, and the publish workflow runs it as a gate before
+Ruff enforces ``FBT`` (keyword-only booleans), ``N``, ``A``, ``ERA``,
+``S101`` (no ``assert`` in library code) and ``C90`` in addition to the base
+rule set; ty and pyrefly run with no suppressions beyond
+``unnecessary-type-conversion`` for ``P.of``. The checks are defined once,
+as local hooks in ``prek.toml`` that run the project's own ruff, ty and
+pyrefly; ``prek install`` runs them on every commit and CI runs the same
+file (plus pytest) on pushes to ``main``, pull requests and release tags
+with ``uv sync --locked``. The publish workflow runs CI as a gate before
 building a release.

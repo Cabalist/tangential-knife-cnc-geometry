@@ -20,10 +20,9 @@ jobs:
           python-version: "3.14"
           enable-cache: true
       - run: uv sync --locked --group dev
-      - run: uv run ruff format --check src tests
-      - run: uv run ruff check src tests
-      - run: uv run ty check
-      - run: uv run pyrefly check
+      # The hooks in prek.toml are the one definition of the checks; a hook that
+      # has to modify a file (ruff --fix, ruff format) fails the run.
+      - run: uv run prek run --all-files
       - run: uv run pytest
 
   optimized:

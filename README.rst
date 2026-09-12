@@ -67,7 +67,8 @@ Development
 ::
 
     uv sync --group dev
-    uv run prek run --all-files      # ruff, ruff-format, ty, pyrefly
+    uv run prek install              # once: run the checks on every commit
+    uv run prek run --all-files      # ruff check, ruff format, ty, pyrefly (prek.toml; CI runs the same)
     uv run pytest
     uv run python -O -m pytest
 

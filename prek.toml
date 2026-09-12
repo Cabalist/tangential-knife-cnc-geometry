@@ -1,0 +1,17 @@
+# Configuration file for `prek`, a git hook framework written in Rust.
+# See https://prek.j178.dev for more information.
+#:schema https://www.schemastore.org/prek.json
+#
+# The single source of truth for the quality checks: `uv run prek install` once
+# to run them on every commit, `uv run prek run --all-files` on demand, and CI
+# runs exactly this file. Every tool comes from the project's own environment
+# (uv.lock), so there is one pinned version of each.
+
+[[repos]]
+repo = "local"
+hooks = [
+    { id = "ruff-check", name = "ruff check", entry = "uv run ruff check --fix", language = "system", types = ["python"] },
+    { id = "ruff-format", name = "ruff format", entry = "uv run ruff format", language = "system", types = ["python"] },
+    { id = "ty", name = "ty check", entry = "uv run ty check", language = "system", pass_filenames = false, types = ["python"] },
+    { id = "pyrefly", name = "pyrefly check", entry = "uv run pyrefly check", language = "system", pass_filenames = false, types = ["python"] },
+]
