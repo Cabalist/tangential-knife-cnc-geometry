@@ -42,6 +42,25 @@ Tolerance
     ``set_epsilon`` once at startup, before creating geometry: it changes the
     grid behind ``==`` and ``hash``.
 
+Job-scoped tolerance
+    A job's own precision is never the global ``EPSILON``: it is passed
+    explicitly wherever a physical question is asked, so objects built
+    earlier keep comparing and hashing as before. ``P.almost_equal``,
+    ``float_eq``, ``angle_eq`` and ``is_zero`` take a ``tolerance``;
+    ``path_is_closed`` takes ``tolerance=``, and ``path_start_at``,
+    ``split_path_where`` and ``nearest_vertex`` forward it to decide
+    closure; ``segments_are_g1`` takes ``point_tolerance=`` and
+    ``angle_tolerance=``; ``biarc_approximation`` takes the job's
+    ``tolerance`` as its first argument; ``Arc.from_sweep`` takes
+    ``tolerance=`` for arcs whose radius and sweep agree with their
+    endpoints only to the job's precision (rounded parser coordinates), and
+    repairs them into exactly consistent arcs rather than accepting
+    inconsistent ones. The constructor invariant, ``==`` and ``hash``, and
+    the internal checks of ``biarc_approximation`` stay at ``EPSILON``,
+    which any job tolerance contains: the approximation's exact endpoints
+    and tangent continuity within ``EPSILON`` satisfy a job-tolerance
+    ``segments_are_g1`` check without further adjustment.
+
 Coordinate envelope
     A double rounds a coordinate of magnitude ``|x|`` to about ``1e-16 *
     |x|``, so ``EPSILON`` is meaningful for ``|x|`` below about ``1e7`` at

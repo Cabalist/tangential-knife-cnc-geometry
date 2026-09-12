@@ -74,22 +74,72 @@ class Arc:
     # ----- construction -------------------------------------------------
 
     @classmethod
-    def from_sweep(cls, p1: PointLike, p2: PointLike, radius: float, angle: float) -> Arc:
+    def from_sweep(
+        cls, p1: PointLike, p2: PointLike, radius: float, angle: float, *, tolerance: float | None = None
+    ) -> Arc:
         """Create an arc from its endpoints, radius and signed sweep; the center is computed.
 
-        Any non-zero sweep is accepted: a sweep of ``1e-9`` at radius ``1e6``
-        is a valid arc of length ``0.001``. Whether the sweep, radius and
-        chord fit together is decided by the constructor's invariant.
+        The endpoints are taken as exact. When the radius and sweep agree with
+        them within ``EPSILON`` (the constructor's invariant) both are stored
+        as given; any non-zero sweep is accepted, so ``1e-9`` at radius
+        ``1e6`` is a valid arc of length ``0.001``. When they disagree by
+        more than that but by no more than ``tolerance`` (a distance, default
+        ``EPSILON``), the arc is repaired so that it passes exactly through
+        both endpoints: a chord longer than the diameter grows the radius to
+        half the chord, and then either the sweep is replaced by the one the
+        endpoints imply at the given radius or the radius by the one they
+        imply at the given sweep, whichever moves the center less (near a
+        half turn the radius is the well-conditioned choice, for a shallow
+        arc the sweep). The sweep keeps its sign and whether it exceeds a
+        half turn. A job with its own precision (arcs built from rounded
+        parser coordinates) passes that precision here and gets arcs that
+        satisfy the invariant exactly, instead of relying on the library's
+        numerical floor.
 
         Raises:
             DegenerateGeometryError: If ``p1`` and ``p2`` coincide (the center
                 of a full circle cannot be inferred).
-            GeometryError: If the sweep is zero, the chord is longer than the
-                diameter, or the inputs are otherwise inconsistent.
+            GeometryError: If the sweep is zero, not finite or beyond a full
+                turn, the radius is not positive, the chord is longer than the
+                diameter by more than ``tolerance``, or the given sweep lands
+                more than ``tolerance`` from ``p2``.
         """
         a = P.of(p1)
         b = P.of(p2)
-        return cls(a, b, radius, angle, calc_center(a, b, radius, angle))
+        tol = const.EPSILON if tolerance is None else tolerance
+        radius = float(radius)
+        angle = float(angle)
+        if not (math.isfinite(radius) and radius > 0.0):
+            raise GeometryError(f"arc radius must be positive and finite, got {radius!r}")
+        if not math.isfinite(angle) or abs(angle) > const.TAU + const.EPSILON:
+            raise GeometryError(f"arc sweep must be within one full turn, got {angle!r}")
+        chord = a.distance(b)
+        if chord > 2.0 * radius:
+            if chord - 2.0 * radius > tol:
+                raise GeometryError(f"chord {chord!r} is longer than the diameter {2.0 * radius!r}")
+            radius = chord / 2.0
+        center = calc_center(a, b, radius, angle)
+        off_circle = abs(a.distance(center) - radius)
+        miss = (center + (a - center).rotate(angle)).distance(b)
+        if off_circle < const.EPSILON and miss < const.EPSILON:
+            return cls(a, b, radius, angle, center)
+        worst = max(off_circle, miss)
+        if worst > tol:
+            raise GeometryError(
+                f"radius {radius!r} and sweep {angle!r} disagree with the endpoints by {worst!r}, "
+                f"more than the tolerance {tol!r}"
+            )
+        # Keep the radius and take the sweep the chord implies, or keep the sweep and take the
+        # radius it implies; the candidate whose center moves least describes the data best.
+        half = math.asin(min(1.0, chord / (2.0 * radius)))
+        implied_sweep = math.copysign(2.0 * half if abs(angle) <= math.pi else const.TAU - 2.0 * half, angle)
+        candidates = [(radius, implied_sweep)]
+        sine = abs(math.sin(angle / 2.0))
+        if sine > 0.0:
+            candidates.append((chord / (2.0 * sine), angle))
+        repaired = [(calc_center(a, b, r, sweep).distance(center), r, sweep) for r, sweep in candidates]
+        _, r, sweep = min(repaired, key=lambda item: item[0])
+        return cls(a, b, r, sweep, calc_center(a, b, r, sweep))
 
     @classmethod
     def from_two_points_and_tangent(

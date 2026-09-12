@@ -134,6 +134,58 @@ def test_from_sweep_accepts_shallow_arcs_at_any_orientation():
                 assert arc.distance_to_point(P.from_polar(radius, start + sweep / 2), segment=True) < const.EPSILON
 
 
+def _rounded(p: P, decimals: int) -> P:
+    return P(round(p.x, decimals), round(p.y, decimals))
+
+
+def test_from_sweep_keeps_a_consistent_sweep_verbatim():
+    for arc in FAMILIES:
+        again = Arc.from_sweep(arc.p1, arc.p2, arc.radius, arc.angle, tolerance=1e-3)
+        assert again.angle == arc.angle
+        assert again.radius == arc.radius
+        assert again == arc
+
+
+def test_from_sweep_repairs_parser_precision_within_a_job_tolerance():
+    # Endpoints rounded to six decimals with the parser's exact radius and sweep: inconsistent at
+    # EPSILON, consistent at the job's 1e-5, and the repaired arc satisfies the invariant exactly.
+    for radius, start, sweep in (
+        (3.0, 0.3, 1.2),
+        (3.0, 0.3, -1.2),
+        (2.0, -1.0, 4.0),
+        (5.0, 2.0, PI - 1e-3),
+        (0.5, 0.0, 6.0),
+    ):
+        p1 = _rounded(P.from_polar(radius, start), 6)
+        p2 = _rounded(P.from_polar(radius, start + sweep), 6)
+        with pytest.raises(GeometryError):
+            Arc.from_sweep(p1, p2, radius, sweep)
+        arc = Arc.from_sweep(p1, p2, radius, sweep, tolerance=1e-5)
+        assert arc.p1 is p1
+        assert arc.p2 is p2
+        # Either the radius or the sweep is kept and the other adjusted, by no more than the
+        # rounding warrants; near a half turn that is the radius, so the center stays put.
+        assert arc.radius == pytest.approx(radius, abs=1e-4)
+        assert arc.angle == pytest.approx(sweep, abs=1e-4)
+        assert arc.radius == radius or arc.angle == sweep
+        assert math.copysign(1, arc.angle) == math.copysign(1, sweep)
+        assert (abs(arc.angle) > PI) == (abs(sweep) > PI)  # major stays major, minor stays minor
+        assert arc.center.almost_equal(ORIGIN, tolerance=1e-4)
+        assert Arc(arc.p1, arc.p2, arc.radius, arc.angle, arc.center) == arc  # the invariant holds
+    # Beyond the job tolerance the data is inconsistent, not imprecise.
+    p1 = P.from_polar(3.0, 0.3)
+    with pytest.raises(GeometryError):
+        Arc.from_sweep(p1, P.from_polar(3.0, 0.3 + 1.3), 3.0, 1.2, tolerance=1e-5)
+    # A chord slightly longer than the diameter grows the radius to half the chord.
+    grown = Arc.from_sweep(P(0, 0), P(2 + 4e-6, 0), 1.0, PI, tolerance=1e-5)
+    assert grown.radius == pytest.approx(1 + 2e-6)
+    assert grown.angle == PI
+    with pytest.raises(GeometryError):
+        Arc.from_sweep(P(0, 0), P(2 + 4e-5, 0), 1.0, PI, tolerance=1e-5)
+    with pytest.raises(GeometryError):  # an invalid sweep is refused, not repaired
+        Arc.from_sweep(P(1, 0), P(0, 1), 1.0, 7.0, tolerance=1e-3)
+
+
 def test_tiny_arc_tangents_agree_with_tangent_at():
     r = 5e-9
     semi = Arc(P(r, 0), P(-r, 0), r, PI, ORIGIN)  # length 1.57e-8: not degenerate

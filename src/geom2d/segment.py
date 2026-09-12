@@ -86,10 +86,11 @@ def path_bounding_box(path: Iterable[Segment]) -> Box:
     return Box.from_path(path)
 
 
-def path_is_closed(path: Iterable[Segment]) -> bool:
-    """True if the last segment ends where the first begins (within ``EPSILON``).
+def path_is_closed(path: Iterable[Segment], *, tolerance: float | None = None) -> bool:
+    """True if the last segment ends where the first begins, within ``tolerance``.
 
-    Accepts any iterable, consumed once; an empty path is not closed.
+    ``tolerance`` is a distance and defaults to ``EPSILON``; a job passes its
+    own. Accepts any iterable, consumed once; an empty path is not closed.
     """
     first: Segment | None = None
     last: Segment | None = None
@@ -99,7 +100,7 @@ def path_is_closed(path: Iterable[Segment]) -> bool:
         last = segment
     if first is None or last is None:
         return False
-    return last.p2.almost_equal(first.p1)
+    return last.p2.almost_equal(first.p1, tolerance)
 
 
 def polyline_to_path(points: Iterable[PointLike]) -> list[Line]:
@@ -119,12 +120,13 @@ def path_to_polyline(path: Sequence[Segment]) -> list[P]:
     return [segment.p1 for segment in path] + [path[-1].p2]
 
 
-def nearest_vertex(path: Sequence[Segment], p: P) -> int:
+def nearest_vertex(path: Sequence[Segment], p: P, *, tolerance: float | None = None) -> int:
     """Index of the path vertex nearest to ``p``.
 
     Vertex ``i`` is the start of segment ``i``. An open path also has vertex
-    ``len(path)``, the end of its last segment; on a closed path that point
-    coincides with vertex ``0`` and is not counted twice.
+    ``len(path)``, the end of its last segment; on a path that is closed
+    within ``tolerance`` (see :func:`path_is_closed`) that point coincides
+    with vertex ``0`` and is not counted twice.
 
     Raises:
         GeometryError: If the path is empty.
@@ -132,7 +134,7 @@ def nearest_vertex(path: Sequence[Segment], p: P) -> int:
     if not path:
         raise GeometryError("an empty path has no vertices")
     vertices = [segment.p1 for segment in path]
-    if not path_is_closed(path):
+    if not path_is_closed(path, tolerance=tolerance):
         vertices.append(path[-1].p2)
     return min(range(len(vertices)), key=lambda i: vertices[i].distance2(p))
 
@@ -189,35 +191,37 @@ def split_path[S: Segment](path: Sequence[S], indices: Iterable[int]) -> list[li
     return [segments[a:b] for a, b in itertools.pairwise(bounds)]
 
 
-def split_path_where[S: Segment](path: Sequence[S], predicate: Callable[[S, S], bool]) -> list[list[S]]:
+def split_path_where[S: Segment](
+    path: Sequence[S], predicate: Callable[[S, S], bool], *, tolerance: float | None = None
+) -> list[list[S]]:
     """Split at every joint where ``predicate(before, after)`` is true.
 
-    For a closed path the closing joint (last segment to first) is tested
-    too. If it splits, the path simply opens there; if it does not but
-    other joints do, the pieces wrap around so no piece straddles the
-    closing joint artificially. A closed path with no splitting joint is
-    returned whole.
+    For a path that is closed within ``tolerance`` (see :func:`path_is_closed`)
+    the closing joint (last segment to first) is tested too. If it splits,
+    the path simply opens there; if it does not but other joints do, the
+    pieces wrap around so no piece straddles the closing joint artificially.
+    A closed path with no splitting joint is returned whole.
     """
     segments = list(path)
     if len(segments) < 2:
         return [segments] if segments else []
     interior = [i for i in range(1, len(segments)) if predicate(segments[i - 1], segments[i])]
-    if path_is_closed(segments) and not predicate(segments[-1], segments[0]) and interior:
-        rotated = path_start_at(segments, interior[0])
+    if path_is_closed(segments, tolerance=tolerance) and not predicate(segments[-1], segments[0]) and interior:
+        rotated = path_start_at(segments, interior[0], tolerance=tolerance)
         shifted = [i - interior[0] for i in interior[1:]]
         return split_path(rotated, shifted)
     return split_path(segments, interior)
 
 
-def path_start_at[S: Segment](path: Sequence[S], index: int) -> list[S]:
-    """Rotate a closed path so that segment ``index`` comes first.
+def path_start_at[S: Segment](path: Sequence[S], index: int, *, tolerance: float | None = None) -> list[S]:
+    """Rotate a path that is closed within ``tolerance`` so that segment ``index`` comes first.
 
     Raises:
-        GeometryError: If the path is not closed.
+        GeometryError: If the path is not closed (see :func:`path_is_closed`).
         IndexError: If ``index`` is out of range.
     """
     segments = list(path)
-    if not path_is_closed(segments):
+    if not path_is_closed(segments, tolerance=tolerance):
         raise GeometryError("only a closed path can be restarted at another vertex")
     if not 0 <= index < len(segments):
         raise IndexError(f"segment index {index} is out of range for a path of {len(segments)} segments")

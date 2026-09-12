@@ -64,11 +64,16 @@ Geometry
   builds its endpoints on the new circle from the sweep. Intersections are
   ordered along the receiving arc; two arcs on one circle report the ends
   of their shared portion with ``on_arc``. ``subdivide_equal`` and
-  ``split_max_sweep`` refuse to make pieces shorter than ``EPSILON``. New:
-  ``subdivide_equal``, ``split_max_sweep``, ``is_clockwise``, ``direction``,
-  tangent vectors, ``tangent_at``. ``extend`` extends. ``offset(+d)`` is
-  left of travel, like ``Line.offset``. ``to_svg_path`` writes a full
-  circle as two half turns.
+  ``split_max_sweep`` refuse to make pieces shorter than ``EPSILON``.
+  ``from_sweep(..., tolerance=)`` repairs arcs whose radius and sweep agree
+  with their endpoints only within a job's precision (the sweep is adjusted
+  to reach ``p2``, a chord slightly longer than the diameter grows the
+  radius), so parser-built arcs become exactly consistent; data consistent
+  within ``EPSILON`` keeps its sweep verbatim. New: ``subdivide_equal``,
+  ``split_max_sweep``, ``is_clockwise``, ``direction``, tangent vectors,
+  ``tangent_at``. ``extend`` extends. ``offset(+d)`` is left of travel,
+  like ``Line.offset``. ``to_svg_path`` writes a full circle as two half
+  turns.
 * ``Line``: cross-product and parameter tolerances are distances, so
   ``point_on_line``, ``is_parallel``, ``which_side`` and intersections do not
   depend on the segment's length; collinear overlapping segments intersect;
@@ -108,13 +113,16 @@ Geometry
   ``hausdorff_distance`` takes any sequence of segments and rejects an
   empty one or a sample count below 1.
 * ``segment``: ``Segment`` protocol, ``Path``, ``path_reversed``,
-  ``path_length``, ``path_bounding_box``, ``path_is_closed``,
-  ``polyline_to_path``, ``path_to_polyline``, ``nearest_vertex`` (every
-  vertex, including an open path's final point), ``heading_change`` (no
-  tolerance of its own), ``segments_are_g1`` with explicit tolerances that
-  are honoured however small, ``split_path``, ``split_path_where``,
-  ``path_start_at``. The helpers that return segments are generic and keep
-  the concrete segment type of their input.
+  ``path_length``, ``path_bounding_box``, ``path_is_closed(path,
+  tolerance=)``, ``polyline_to_path``, ``path_to_polyline``,
+  ``nearest_vertex`` (every vertex, including an open path's final point),
+  ``heading_change`` (no tolerance of its own), ``segments_are_g1`` with
+  explicit tolerances that are honoured however small, ``split_path``,
+  ``split_path_where``, ``path_start_at``. The helpers that decide whether
+  a path is closed forward a ``tolerance=`` keyword to ``path_is_closed``,
+  so a job's precision is passed explicitly instead of changing the global
+  floor. The helpers that return segments are generic and keep the
+  concrete segment type of their input.
 * ``const``: ``float_eq`` is an absolute comparison at every magnitude;
   ``angle_eq`` treats directions a whole turn apart as equal; ``set_epsilon``
   validates (``MIN_EPSILON`` = 1e-15 to below 1) and computes every derived

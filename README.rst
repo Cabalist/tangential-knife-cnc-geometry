@@ -52,6 +52,11 @@ Conventions
   features below that floor yourself. Near ``EPSILON`` the library promises
   self-consistency (no crashes, nothing silently dropped, connected output),
   never physical meaning.
+* A job's tolerance is passed explicitly, never set globally:
+  ``path_is_closed(path, tolerance=)``, ``segments_are_g1(...,
+  point_tolerance=, angle_tolerance=)``, ``P.almost_equal(other, tolerance)``,
+  ``biarc_approximation(tolerance)`` and ``Arc.from_sweep(..., tolerance=)``
+  for arcs built from rounded coordinates.
 * ``==`` and ``hash`` on geometry are grid identity at ``EPSILON`` resolution
   (so objects work in sets and dicts); ``P.almost_equal`` tests geometric
   coincidence. ``set_epsilon`` is called once at startup, before any geometry

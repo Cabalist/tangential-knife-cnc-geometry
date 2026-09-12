@@ -12,6 +12,7 @@ from geom2d import (
     Path,
     Segment,
     angle_eq,
+    const,
     heading_change,
     nearest_vertex,
     path_bounding_box,
@@ -209,6 +210,30 @@ def test_offset_path_stays_closed_and_g1():
         assert path_is_closed(moved)
         assert g1_everywhere(moved)
         assert path_length(moved) == pytest.approx(2 * 8 + 2 * 4 + 2 * PI * (1 - distance))
+
+
+def test_closure_takes_a_job_tolerance():
+    # A path that closes to a job's precision but not to EPSILON: the job passes its tolerance
+    # wherever closure is decided, and the global floor is never touched.
+    path = rounded_rectangle()
+    gap = P(3e-6, -2e-6)
+    almost = [*path[:-1], Arc.from_sweep(path[-1].p1, path[-1].p2 + gap, 1.0, PI / 2, tolerance=1e-5)]
+    assert not path_is_closed(almost)
+    assert path_is_closed(almost, tolerance=1e-5)
+    assert path_is_closed(iter(almost), tolerance=1e-5)
+    assert segments_are_g1(almost[-1], almost[0], point_tolerance=1e-5, angle_tolerance=1e-5)
+    with pytest.raises(GeometryError):
+        path_start_at(almost, 3)
+    assert path_start_at(almost, 3, tolerance=1e-5)[0] is almost[3]
+    assert nearest_vertex(almost, P(1, -0.1)) == 8  # open at EPSILON: the final point is a vertex
+    assert nearest_vertex(almost, P(1, -0.1), tolerance=1e-5) == 0  # closed for the job
+
+    def corner(a: Segment, b: Segment) -> bool:
+        return abs(heading_change(a, b)) > PI / 4
+
+    assert split_path_where(almost, corner) == [almost]
+    assert split_path_where(almost, corner, tolerance=1e-5) == [almost]
+    assert const.EPSILON == 1e-8
 
 
 def test_reversed_length_bbox():
