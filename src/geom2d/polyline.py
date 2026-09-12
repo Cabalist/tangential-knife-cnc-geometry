@@ -7,13 +7,11 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Iterator, Sequence
-from itertools import starmap
+from itertools import pairwise, starmap
 from typing import TYPE_CHECKING
 
-from . import polygon
 from .line import Line, TLine
 from .point import P, TPoint
-from .util import pairwise
 
 if TYPE_CHECKING:
     from typing import TypeAlias
@@ -65,16 +63,12 @@ def polypath_reversed(polypath: Sequence[Line]) -> list[Line]:
 
 def polypath_length(polypath: Iterable[TLine]) -> float:
     """Total cumulative length of polypath."""
-    return float(
-        sum(math.hypot(s[1][0] - s[0][0], s[1][1] - s[0][1]) for s in polypath)
-    )
+    return float(sum(math.hypot(s[1][0] - s[0][0], s[1][1] - s[0][1]) for s in polypath))
 
 
 def polyline_length(polyline: Iterable[TPoint]) -> float:
     """Total cumulative length of polyline."""
-    return float(
-        sum(math.hypot(p2[0] - p1[0], p2[1] - p1[1]) for p1, p2 in pairwise(polyline))
-    )
+    return float(sum(math.hypot(p2[0] - p1[0], p2[1] - p1[1]) for p1, p2 in pairwise(polyline)))
 
 
 def polypath_length_to(polypath: Iterable[Line], p: TPoint) -> float:
@@ -98,9 +92,7 @@ def polyline_length_to(polyline: Iterable[TPoint], p: TPoint) -> float:
     return length  # Default is total length of polyline
 
 
-def closest_point(
-    polyline: Iterable[TPoint], p: TPoint, vertices_only: bool = False
-) -> P:
+def closest_point(polyline: Iterable[TPoint], p: TPoint, vertices_only: bool = False) -> P:
     """Get the closest point on a polyline to point `p`.
 
     Args:
@@ -130,19 +122,6 @@ def closest_point(
         p1 = p2
 
     return closest_p
-
-
-def is_inside(polypath1: Iterable[TLine], polypath2: Iterable[TLine]) -> bool:
-    """Is polypath1 inside polypath2?"""
-    # TODO: they should have no intersections
-    polygon2 = list(polypath_to_polyline(polypath2))
-    segment: TLine | None = None
-    for segment in polypath1:
-        if not polygon.point_inside(polygon2, segment[0]):
-            return False
-    if segment:
-        return polygon.point_inside(polygon2, segment[1])
-    return False
 
 
 def segment_intersects(polyline: Iterable[TPoint], segment: Line) -> bool:

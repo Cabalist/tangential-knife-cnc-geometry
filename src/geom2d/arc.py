@@ -12,21 +12,19 @@ import math
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from . import const, debug, ellipse, util
+from . import const, util
 from .const import TAU
-from .ellipse import EllipticalArc
 from .line import Line
 from .point import P
 
 if TYPE_CHECKING:
-    from typing_extensions import Self
+    from typing import Self
 
     from .point import TPoint
-    from .transform2d import TMatrix
 
 
 # TODO: Refactor to make p2 the last element of the tuple
-class Arc(tuple[P, P, float, float, P]):  # ruff: ignore[no-slots-in-tuple-subclass]
+class Arc(tuple[P, P, float, float, P]):
     """Two dimensional immutable circular arc segment.
 
     Args:
@@ -61,45 +59,13 @@ class Arc(tuple[P, P, float, float, P]):  # ruff: ignore[no-slots-in-tuple-subcl
         p2 = P(p2)
         center = P(center) if center else calc_center(p1, p2, radius, angle)
 
-        if const.DEBUG:
-            # Perform a sanity check
-            d1 = p1.distance(center)
-            d2 = p2.distance(center)
-            # Check for consistent radius
-            if not const.float_eq(d1, d2):
-                debug.draw_point(p1, color="#ff0000")
-                debug.draw_point(p2, color="#00ff00")
-                debug.draw_point(center, color="#ffff00")
-                debug.debug(
-                    "Bad arc: "
-                    f"d1={d1} != d2={d2}, "
-                    f"p1={p1} p2={p2} radius={radius} center={center} "
-                    f"angle={angle} center={center}"
-                )
-                raise ValueError("bad arc")
-            assert const.float_eq(d1, radius)
-            assert -TAU < angle < TAU
-            # this test only works for angle < +-PI
-            # if not const.float_eq(abs(angle), abs(center.angle2(p1, p2))):
-            #    debug.draw_point(p1, color='#ff0000')
-            #    debug.draw_point(p2, color='#00ff00')
-            #    debug.draw_point(center, color='#ffff00')
-            #    debug.debug(
-            #        'Bad arc: '
-            #        f'angle={angle} != {center.angle2(p1, p2)} '
-            #        f'p1={p1} p2={p2} radius={radius} center={center} '
-            #        f'd1={d1} d2={d2}'
-            #    )
-
         return super().__new__(
             cls,
             (p1, p2, radius, angle, center),  # type: ignore [arg-type, type-var]
         )
 
     @staticmethod
-    def from_two_points_and_center(
-        p1: TPoint, p2: TPoint, center: TPoint, large_arc: bool = False
-    ) -> Arc | None:
+    def from_two_points_and_center(p1: TPoint, p2: TPoint, center: TPoint, large_arc: bool = False) -> Arc | None:
         """Create an Arc given two end points and a center point.
 
         Since this would be ambiguous, a hint must be given as
@@ -120,20 +86,10 @@ class Arc(tuple[P, P, float, float, P]):  # ruff: ignore[no-slots-in-tuple-subcl
             if large_arc:
                 angle = (-TAU if angle < 0 else TAU) - angle
             return Arc(p1, p2, (d1 + d2) / 2, angle, center)
-        if const.DEBUG:
-            debug.draw_point(p1, color="#ff0000")
-            debug.draw_point(p2, color="#00ff00")
-            debug.draw_point(center, color="#ffff00")
-            debug.debug(
-                f"Bad arc: d1={d1} != d2={d2}, p1={p1} p2={p2} center={center} "
-            )
-            raise ValueError("bad arc")
         return None
 
     @staticmethod
-    def from_two_points_and_tangent(
-        p1: TPoint, ptan: TPoint, p2: TPoint, reverse: bool = False
-    ) -> Arc | None:
+    def from_two_points_and_tangent(p1: TPoint, ptan: TPoint, p2: TPoint, reverse: bool = False) -> Arc | None:
         """Create an Arc given two points and a tangent vector from p1->ptan.
 
         Args:
@@ -164,42 +120,6 @@ class Arc(tuple[P, P, float, float, P]):  # ruff: ignore[no-slots-in-tuple-subcl
         if reverse:
             return Arc(p2, p1, radius, -angle)
         return Arc(p1, p2, radius, angle)
-
-    @staticmethod
-    def from_endpoints(
-        p1: TPoint,
-        p2: TPoint,
-        radius: float,
-        large_arc: int,
-        sweep_flag: int,
-    ) -> Arc | None:
-        """Create a circular arc from SVG-style endpoint parameters.
-
-        Args:
-            p1: The start point of the arc.
-            p2: The end point of the arc.
-            radius: Arc radius.
-            large_arc: The large arc flag (0 or 1).
-            sweep_flag: The sweep flag (0 or 1).
-
-        Returns:
-            An Arc, or None if the parameters do not
-            describe a valid arc.
-        """
-        elliptical_arc = EllipticalArc.from_endpoints(
-            p1, p2, radius, radius, 0, large_arc, sweep_flag
-        )
-
-        if elliptical_arc:
-            return Arc(
-                p1,
-                p2,
-                radius,
-                elliptical_arc.sweep_angle,
-                center=elliptical_arc.center,
-            )
-
-        return None
 
     @property
     def p1(self) -> P:
@@ -314,34 +234,6 @@ class Arc(tuple[P, P, float, float, P]):  # ruff: ignore[no-slots-in-tuple-subcl
         chord_midpoint = Line(self.p1, self.p2).midpoint()
         return self.radius - chord_midpoint.distance(self.center)
 
-    def transform(self, matrix: TMatrix) -> Arc:
-        """Apply transform to this Arc.
-
-        Args:
-            matrix: An affine transform matrix. The arc will remain
-                circular.
-
-        Returns:
-            A copy of this arc with the transform matrix applied to it.
-        """
-        # TODO: return an Ellipse if the scaling is not regular ?
-        new_p1 = self.p1.transform(matrix)
-        new_p2 = self.p2.transform(matrix)
-        scale_x = matrix[0][0]
-        scale_y = matrix[1][1]
-        # Make sure this won't make an ellipse.
-        assert abs(scale_x) == abs(scale_y)
-        angle = self.angle
-        # If arc is mirrored then swap direction of angle
-        if scale_x * scale_y < 0:
-            angle = -angle
-        # TODO: possibly find a more efficient way to scale radius...
-        chord_len2 = self.p1.distance2(self.p2)
-        new_chord_len2 = new_p1.distance2(new_p2)
-        new_radius = self.radius * (new_chord_len2 / chord_len2)
-        # Center will be recomputed...
-        return Arc(new_p1, new_p2, new_radius, angle)
-
     def offset(self, distance: float, preserve_center: bool = True) -> Arc:
         """Return a copy of this Arc that is offset by `distance`.
 
@@ -360,9 +252,7 @@ class Arc(tuple[P, P, float, float, P]):  # ruff: ignore[no-slots-in-tuple-subcl
         if preserve_center:
             new_radius = self.radius + distance
             if new_radius < 0 or const.is_zero(new_radius):
-                raise ValueError(
-                    f"Cannot offset arc of radius {self.radius} by {distance}."
-                )
+                raise ValueError(f"Cannot offset arc of radius {self.radius} by {distance}.")
             line1 = Line(self.center, self.p1).extend(distance)
             line2 = Line(self.center, self.p2).extend(distance)
             return Arc(
@@ -405,9 +295,7 @@ class Arc(tuple[P, P, float, float, P]):  # ruff: ignore[no-slots-in-tuple-subcl
         if const.float_eq(aangle, math.pi):
             # 180d angle, so just see which side of the chord it lands on.
             which_side = Line(self.p1, self.p2).which_side(p)
-            is_inside_arc = (which_side == 1 and self.angle < 0) or (
-                which_side == -1 and self.angle > 0
-            )
+            is_inside_arc = (which_side == 1 and self.angle < 0) or (which_side == -1 and self.angle > 0)
         elif aangle > math.pi:
             # TODO: test this...
             phi = self.center.ccw_angle2(self.p1, p)
@@ -636,9 +524,7 @@ class Arc(tuple[P, P, float, float, P]):  # ruff: ignore[no-slots-in-tuple-subcl
             pline = Line(self.center, p)
             intersection = chord.intersection(pline, segment=True)
             angle_is_major = abs(self.angle) > math.pi
-            return (angle_is_major and intersection is None) or (
-                not angle_is_major and intersection is not None
-            )
+            return (angle_is_major and intersection is None) or (not angle_is_major and intersection is not None)
         return False
 
     def normal_projection_point(self, p: TPoint, segment: bool = False) -> P | None:
@@ -704,9 +590,7 @@ class Arc(tuple[P, P, float, float, P]):  # ruff: ignore[no-slots-in-tuple-subcl
         if const.is_zero(dsc):
             # Line is tangent so one intersection
             p1 = line.normal_projection_point(self.center)
-            if (not on_arc or self.point_on_arc(p1)) and (
-                not on_line or line.point_on_line(p1, segment=True)
-            ):
+            if (not on_arc or self.point_on_arc(p1)) and (not on_line or line.point_on_line(p1, segment=True)):
                 intersections.append(p1)
         elif dsc > 0:
             # Two intersections - find them
@@ -718,14 +602,10 @@ class Arc(tuple[P, P, float, float, P]):  # ruff: ignore[no-slots-in-tuple-subcl
             y2 = ((-det * dx) - (abs(dy) * dscr)) / dr2
             p1 = P(x1, y1) + self.center
             p2 = P(x2, y2) + self.center
-            if (not on_arc or self.point_on_arc(p1)) and (
-                not on_line or line.point_on_line(p1, segment=True)
-            ):
+            if (not on_arc or self.point_on_arc(p1)) and (not on_line or line.point_on_line(p1, segment=True)):
                 # debug.draw_point(p1, color='#ffc0c0')
                 intersections.append(p1)
-            if (not on_arc or self.point_on_arc(p2)) and (
-                not on_line or line.point_on_line(p2, segment=True)
-            ):
+            if (not on_arc or self.point_on_arc(p2)) and (not on_line or line.point_on_line(p2, segment=True)):
                 # debug.draw_point(p2, color='#c0c0ff')
                 intersections.append(p2)
         return intersections
@@ -746,20 +626,12 @@ class Arc(tuple[P, P, float, float, P]):  # ruff: ignore[no-slots-in-tuple-subcl
         Returns:
             A list containing zero, one, or two intersections.
         """
-        intersections = list(
-            ellipse.intersect_circle(self.center, self.radius, arc.center, arc.radius)
-        )
+        intersections = list(intersect_circles(self.center, self.radius, arc.center, arc.radius))
         # Delete intersections that don't lie on the arc segments.
         if on_arc and intersections:
-            if not (
-                self.point_on_arc(intersections[0])
-                and arc.point_on_arc(intersections[0])
-            ):
+            if not (self.point_on_arc(intersections[0]) and arc.point_on_arc(intersections[0])):
                 del intersections[0]
-            if intersections and not (
-                self.point_on_arc(intersections[-1])
-                and arc.point_on_arc(intersections[-1])
-            ):
+            if intersections and not (self.point_on_arc(intersections[-1]) and arc.point_on_arc(intersections[-1])):
                 del intersections[-1]
         return intersections
 
@@ -778,10 +650,7 @@ class Arc(tuple[P, P, float, float, P]):  # ruff: ignore[no-slots-in-tuple-subcl
 
     def __repr__(self) -> str:
         """Convert this Arc to a string."""
-        return (
-            f"Arc({self.p1!r}, {self.p2!r}, {self.radius!r}, "
-            f"{self.angle!r}, {self.center!r})"
-        )
+        return f"Arc({self.p1!r}, {self.p2!r}, {self.radius!r}, {self.angle!r}, {self.center!r})"
 
     def __eq__(self, other: object) -> bool:
         """Compare arcs for geometric equality.
@@ -806,9 +675,7 @@ class Arc(tuple[P, P, float, float, P]):  # ruff: ignore[no-slots-in-tuple-subcl
         rahash = (rhash ^ ahash) % const.HASH_SIZE
         return hash(self.p1) ^ hash(self.p2) ^ hash(self.center) ^ rahash
 
-    def to_svg_path(
-        self, scale: float = 1, add_prefix: bool = True, add_move: bool = False
-    ) -> str:
+    def to_svg_path(self, scale: float = 1, add_prefix: bool = True, add_move: bool = False) -> str:
         """Arc to SVG path string.
 
         See:
@@ -833,11 +700,7 @@ class Arc(tuple[P, P, float, float, P]):  # ruff: ignore[no-slots-in-tuple-subcl
 
         radius = self.radius * scale
         p2 = self.p2 * scale
-        return (
-            f"{prefix}{ff(radius)},{ff(radius)}"
-            f" 0 {self.large_arc_flag} {self.sweep_flag}"
-            f" {ff(p2.x)},{ff(p2.y)}"
-        )
+        return f"{prefix}{ff(radius)},{ff(radius)} 0 {self.large_arc_flag} {self.sweep_flag} {ff(p2.x)},{ff(p2.y)}"
 
 
 def calc_center(p1: TPoint, p2: TPoint, radius: float, angle: float) -> P:
@@ -901,3 +764,39 @@ def calc_center(p1: TPoint, p2: TPoint, radius: float, angle: float) -> P:
     # center_y = midp.y + (sign * c2m * ((p2.x - p1.x) / chord_len))
 
     # return P(center_x, center_y)
+
+
+def intersect_circles(c1_center: TPoint, c1_radius: float, c2_center: TPoint, c2_radius: float) -> tuple[P, ...]:
+    """The intersection (if any) of two circles.
+
+    See:
+        <http://mathworld.wolfram.com/Circle-CircleIntersection.html>
+
+    Returns:
+        Two intersection points if the circles intersect, a single point if
+        they are tangent, or an empty tuple if they do not intersect or are
+        coincident.
+    """
+    c1 = P(c1_center)
+    line_c1c2 = Line(c1, c2_center)
+    dist_c1c2 = line_c1c2.length()
+    if dist_c1c2 > (c1_radius + c2_radius):
+        return ()
+    if dist_c1c2 < abs(c1_radius - c2_radius):
+        return ()
+    if const.is_zero(dist_c1c2):
+        return ()
+    if const.float_eq(dist_c1c2, c1_radius + c2_radius):
+        # Externally tangent: the point lies on the center line at r1 from c1.
+        return (line_c1c2.point_at(c1_radius / dist_c1c2),)
+    rr1 = c1_radius * c1_radius
+    rr2 = c2_radius * c2_radius
+    dist_c1rad = ((dist_c1c2 * dist_c1c2) - rr2 + rr1) / (2 * dist_c1c2)
+    hr2 = rr1 - (dist_c1rad * dist_c1rad)
+    if hr2 < 0:
+        return ()
+    half_rad = math.sqrt(hr2)
+    angle_c1c2 = line_c1c2.angle()
+    ip1 = P(dist_c1rad, half_rad).rotate(angle_c1c2)
+    ip2 = P(dist_c1rad, -half_rad).rotate(angle_c1c2)
+    return (c1 + ip1, c1 + ip2)

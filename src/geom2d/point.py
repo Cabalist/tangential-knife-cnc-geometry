@@ -9,11 +9,10 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, SupportsFloat
 
 # from collections import namedtuple
-from . import const, transform2d, util
+from . import const, util
 
 if TYPE_CHECKING:
-    from transform2d import TMatrix
-    from typing_extensions import Self
+    from typing import Self
 
 # Generic point input type.
 # A point is generally a sequence containing
@@ -500,9 +499,7 @@ class P(tuple[float, float]):  # namedtuple('P', 'x, y')):
             negative if counterclockwise (left),
             zero if points are colinear.
         """
-        w = (p2[0] - self[0]) * (p3[1] - self[1]) - (p3[0] - self[0]) * (
-            p2[1] - self[1]
-        )
+        w = (p2[0] - self[0]) * (p3[1] - self[1]) - (p3[0] - self[0]) * (p2[1] - self[1])
         return (w > const.EPSILON) - (w < -const.EPSILON)
 
     def colinear(self, p2: TPoint, p3: TPoint, tolerance: float | None = None) -> bool:
@@ -514,19 +511,16 @@ class P(tuple[float, float]):  # namedtuple('P', 'x, y')):
         # cross product == 0
         return const.float_eq(x1 * y2, x2 * y1, tolerance)
 
-    def transform(self, matrix: TMatrix) -> P:
-        """Apply transform matrix to this vector.
-
-        Returns:
-            A copy of this point with the transform matrix applied to it.
-        """
-        return P(transform2d.matrix_apply_to_point(matrix, self))
-
     def rotate(self, angle: float, origin: TPoint | None = None) -> P:
-        """Return a copy of this point rotated about the origin by `angle`."""
+        """Return a copy of this point rotated about `origin` by `angle` radians."""
         if const.is_zero(angle):
-            return P(self)  # just return a copy if no actual rotation
-        return self.transform(transform2d.matrix_rotate(angle, origin))
+            return P(self)
+        ox, oy = origin if origin is not None else (0.0, 0.0)
+        dx = self[0] - ox
+        dy = self[1] - oy
+        c = math.cos(angle)
+        s = math.sin(angle)
+        return P(ox + dx * c - dy * s, oy + dx * s + dy * c)
 
     def to_svg(self, scale: float = 1) -> str:
         """SVG string representation."""
@@ -660,10 +654,7 @@ class P(tuple[float, float]):  # namedtuple('P', 'x, y')):
 
     def __str__(self) -> str:
         """Concise string representation."""
-        return (
-            f"({self[0]:.{const.EPSILON_PRECISION}f},"
-            f" {self[1]:.{const.EPSILON_PRECISION}f})"
-        )
+        return f"({self[0]:.{const.EPSILON_PRECISION}f}, {self[1]:.{const.EPSILON_PRECISION}f})"
 
     def __repr__(self) -> str:
         """Precise string representation."""

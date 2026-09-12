@@ -6,7 +6,7 @@ import sys
 import numpy as np
 import pytest
 
-from geom2d import const, point, transform2d
+from geom2d import const, point
 from geom2d.const import float_eq
 from geom2d.point import P
 
@@ -266,28 +266,6 @@ def test_winding() -> None:
     assert float_eq(winding, 0.0)
 
 
-def test_transform_and_rotate() -> None:
-    """Test transform and rotate methods."""
-    p = P(1.0, 0.0)
-
-    # Rotation by 90 degrees should give (0, 1)
-    rotated = p.rotate(math.pi / 2)
-    assert float_eq(rotated.x, 0.0)
-    assert float_eq(rotated.y, 1.0)
-
-    # Test with origin specified
-    origin = P(1.0, 1.0)
-    rotated = p.rotate(math.pi / 2, origin)
-    assert float_eq(rotated.x, 2.0)
-    assert float_eq(rotated.y, 1.0)
-
-    # Translation transform
-    matrix = transform2d.matrix_translate(2.0, 3.0)
-    transformed = p.transform(matrix)
-    assert float_eq(transformed.x, 3.0)
-    assert float_eq(transformed.y, 3.0)
-
-
 def test_colinear() -> None:
     """Test colinear method."""
     p1 = P(2, 3)
@@ -387,10 +365,7 @@ def test_special_methods() -> None:
     p = P(3.0, 4.0)
 
     # String representation
-    assert (
-        str(p)
-        == f"(3.{0:0<{const.EPSILON_PRECISION}}, 4.{0:0<{const.EPSILON_PRECISION}})"
-    )
+    assert str(p) == f"(3.{0:0<{const.EPSILON_PRECISION}}, 4.{0:0<{const.EPSILON_PRECISION}})"
 
     # Repr
     assert repr(p) == "P(3.0, 4.0)"
@@ -542,10 +517,7 @@ def test_hash() -> None:
 
 def _test_hash(max_hashes: int, min_xy: float, max_xy: float) -> None:
     rng = np.random.default_rng()
-    points = {
-        P(rng.uniform(min_xy, max_xy), rng.uniform(min_xy, max_xy))
-        for n in range(max_hashes)
-    }
+    points = {P(rng.uniform(min_xy, max_xy), rng.uniform(min_xy, max_xy)) for n in range(max_hashes)}
     # Test equality for reasonable rando collisions
     assert (max_hashes - len(points)) < (max_hashes * 0.01)
 

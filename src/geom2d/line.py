@@ -11,15 +11,13 @@ from . import const, util
 from .point import P, TPoint
 
 if TYPE_CHECKING:
-    from typing_extensions import Self
-
-    from .transform2d import TMatrix
+    from typing import Self
 
 TLine = Sequence[Sequence[float]]  # Generic input type
 
 
 # namedtuple('Line', 'p1, p2')):
-class Line(tuple[P, P]):  # ruff: ignore[no-slots-in-tuple-subclass]
+class Line(tuple[P, P]):
     """Two dimensional immutable line segment defined by two points.
 
     Args:
@@ -120,10 +118,6 @@ class Line(tuple[P, P]):  # ruff: ignore[no-slots-in-tuple-subclass]
 
     start_tangent_angle = angle
     end_tangent_angle = angle
-
-    def transform(self, matrix: TMatrix) -> Line:
-        """A copy of this line with the transform matrix applied to it."""
-        return Line(self[0].transform(matrix), self[1].transform(matrix))
 
     def midpoint(self) -> P:
         """The midpoint of this line segment."""
@@ -333,9 +327,7 @@ class Line(tuple[P, P]):  # ruff: ignore[no-slots-in-tuple-subclass]
         #                 or mub < -const.EPSILON or mub > 1.0 + const.EPSILON):
         mu_min = -const.EPSILON
         mu_max = 1.0 + const.EPSILON
-        if (seg_a and (mu_a < mu_min or mu_a > mu_max)) or (  # ruff: ignore[too-many-boolean-expressions]
-            seg_b and (mu_b < mu_min or mu_b > mu_max)
-        ):
+        if (seg_a and (mu_a < mu_min or mu_a > mu_max)) or (seg_b and (mu_b < mu_min or mu_b > mu_max)):
             # The intersection lies outside the line segments
             return None
         return mu_a
@@ -554,9 +546,9 @@ class Line(tuple[P, P]):  # ruff: ignore[no-slots-in-tuple-subclass]
         if segment and is_collinear:
             x1, y1 = self.p1
             x2, y2 = self.p2
-            return (min(x1, x2) - const.EPSILON) <= p[0] <= (
-                max(x1, x2) + const.EPSILON
-            ) and (min(y1, y2) - const.EPSILON) <= p[1] <= (max(y1, y2) + const.EPSILON)
+            return (min(x1, x2) - const.EPSILON) <= p[0] <= (max(x1, x2) + const.EPSILON) and (
+                min(y1, y2) - const.EPSILON
+            ) <= p[1] <= (max(y1, y2) + const.EPSILON)
         return is_collinear
 
     def path_reversed(self) -> Line:
@@ -593,10 +585,7 @@ class Line(tuple[P, P]):  # ruff: ignore[no-slots-in-tuple-subclass]
         """
         # Compare both directions
         if isinstance(other, Sequence) and len(self) == len(other):
-            return bool(
-                (self.p1 == other[0] and self.p2 == other[1])
-                or (self.p1 == other[1] and self.p2 == other[0])
-            )
+            return bool((self.p1 == other[0] and self.p2 == other[1]) or (self.p1 == other[1] and self.p2 == other[0]))
         return False
 
     def __hash__(self) -> int:
@@ -614,9 +603,7 @@ class Line(tuple[P, P]):  # ruff: ignore[no-slots-in-tuple-subclass]
         """Precise string representation."""
         return f"Line({self.p1!r}, {self.p2!r})"
 
-    def to_svg_path(
-        self, scale: float = 1, add_prefix: bool = True, add_move: bool = False
-    ) -> str:
+    def to_svg_path(self, scale: float = 1, add_prefix: bool = True, add_move: bool = False) -> str:
         """Line to SVG path string.
 
         Args:

@@ -12,11 +12,7 @@ from .point import P, TPoint
 
 if typing.TYPE_CHECKING:
     from collections.abc import Iterable
-
-    from typing_extensions import Self
-
-    from .arc import Arc
-    from .transform2d import TMatrix
+    from typing import Self
 
 # Generic box type
 TBox = Sequence[TPoint]
@@ -176,12 +172,7 @@ class Box(tuple[P, P]):
 
     def point_inside(self, p: TPoint) -> bool:
         """True if the point is inside this rectangle."""
-        return (
-            p[0] > self[0][0]
-            and p[0] < self[1][0]
-            and p[1] > self[0][1]
-            and p[1] < self[1][1]
-        )
+        return p[0] > self[0][0] and p[0] < self[1][0] and p[1] > self[0][1] and p[1] < self[1][1]
 
     def line_inside(self, ln: TLine) -> bool:
         """True if the line segment is inside this rectangle."""
@@ -203,14 +194,6 @@ class Box(tuple[P, P]):
             by the specified distance. Also known as buffering.
         """
         return Box(self.p1 - distance, self.p2 + distance)
-
-    def transform(self, matrix: TMatrix) -> Box:
-        """Apply transform to this Box.
-
-        Note: rotations just scale since a Box is always aligned to
-            the X and Y axes.
-        """
-        return Box(self[0].transform(matrix), self[1].transform(matrix))
 
     def clip_line(self, ln: TLine) -> Line | None:
         """Use this box to clip a line segment.
@@ -287,28 +270,6 @@ class Box(tuple[P, P]):
             return self.clip_line((p1, p2))
         return None
 
-    def clip_arc(self, _arc: Arc) -> Arc | None:
-        """Use this Box to clip an Arc.
-
-        If the given circular arc is clipped by this rectangle then
-        return a new arc with clipped end-points.
-
-        This only returns a single clipped arc even if the arc could
-        be clipped into two sub-arcs... For now this is considered
-        a pathological condition.
-
-        Args:
-            arc: The arc segment to clip.
-
-        Returns:
-            A new clipped arc or None if the arc segment
-            is entirely outside this clipping rectangle.
-            If the arc segment is entirely within the rectangle this
-            returns the same (unclipped) arc segment.
-        """
-        # TODO: implement clip_arc...
-        raise NotImplementedError
-
     def start_tangent_angle(self) -> float:
         """Tangent at start point.
 
@@ -352,8 +313,8 @@ class Box(tuple[P, P]):
 
 # pylint: disable=invalid-name
 def _lbclip_helper(
-    nQ: float,  # ruff: ignore[invalid-argument-name]
-    nP: float,  # ruff: ignore[invalid-argument-name]
+    nQ: float,
+    nP: float,
     u_minmax: list[float],
 ) -> bool:
     """Lian-Barsky helper."""

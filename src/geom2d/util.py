@@ -2,39 +2,20 @@
 
 from __future__ import annotations
 
-import itertools
 import math
 from typing import TYPE_CHECKING
 
 from . import const, point
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Sequence
+    from collections.abc import Callable
 
     from .arc import Arc
     from .bezier import CubicBezier
     from .line import Line
-    from .point import TPoint
 
 
-# pylint: disable=ungrouped-imports
-try:
-    from itertools import (  # type: ignore [attr-defined]
-        pairwise,
-    )
-except ImportError:
-    from itertools import tee
-
-    def pairwise(iterable: Iterable) -> Iterable:  # type: ignore [no-redef]
-        """Implement itertools.pairwise for python < 3.10."""
-        a, b = tee(iterable)
-        next(b, None)
-        return zip(a, b)
-
-
-def float_formatter(
-    scale: float = 1, precision: float | None = None
-) -> Callable[[float], str]:
+def float_formatter(scale: float = 1, precision: float | None = None) -> Callable[[float], str]:
     """Get a float formatter for a specified precision.
 
     Args:
@@ -127,28 +108,3 @@ def segments_are_g1(
             tolerance=angle_tolerance,
         )
     return False
-
-
-def reverse_path(
-    path: Sequence[Line | Arc | CubicBezier],
-) -> list[Line | Arc | CubicBezier]:
-    """Reverse the order and direction of path segments."""
-    rpath: list[Line | Arc | CubicBezier] = []
-    for i, segment in enumerate(reversed(path)):
-        rpath[i] = segment.path_reversed()
-    return rpath
-
-
-def triplepoints(
-    points: Iterable[TPoint],
-) -> Iterator[tuple[TPoint, TPoint, TPoint]]:
-    """Return overlapping point triplets from *points*.
-
-    >>> list(triplewise('ABCDE'))
-    [('A', 'B', 'C'), ('B', 'C', 'D'), ('C', 'D', 'E')]
-
-    See:
-        https://github.com/more-itertools/more-itertools
-    """
-    for (a, _), (b, c) in itertools.pairwise(itertools.pairwise(points)):
-        yield a, b, c

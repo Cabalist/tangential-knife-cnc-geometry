@@ -1,18 +1,13 @@
 Testing
 =======
 
-Clone repository::
+Install the development environment and run the checks::
 
-    git clone https://github.com/utlco/utl-geom2d
+    uv sync --group dev
+    uv run prek run --all-files      # ruff, ruff-format, ty, pyrefly
+    uv run pytest                    # xdist, random order
+    uv run python -O -m pytest       # assertions stripped
 
-Install development/test package::
-
-    cd utl-geom2d
-    python -m venv venv
-    . venv/bin/activate
-    pip install -e .[test]
-
-Run tests::
-
-    pytest
-
+Tests use only the standard library. One test module per kernel module;
+regression tests are named after the finding they cover (see
+``docs/rebuild-plan.md``).

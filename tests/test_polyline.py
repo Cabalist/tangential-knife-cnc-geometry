@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from geom2d import polyline, triangle
+from geom2d import polyline
 from geom2d.point import P
 
 POLY1 = (
@@ -32,11 +32,6 @@ D_P2_A = 4.131091039124777
 P2_B = (4.4769359, 5.5000018)
 D_P2_B = 4.352254801325523
 
-TRIANGLE = (
-    P(2.3496753, 5.8597622),
-    P(1.840792, 4.4450859),
-    P(4.2500014, 4.0902167),
-)
 INCIRCLE_CENTER = P(2.5846470413588323, 4.8905934584730995)
 INCIRCLE_RADIUS = 0.5491498205604967
 
@@ -53,9 +48,3 @@ def test_polyline_length_to() -> None:
     d2 = polyline.polyline_length_to(POLY2, P2_B)
     assert d1 == D_P2_A
     assert d2 == D_P2_B
-
-
-def test_triangle_incircle() -> None:
-    c, r = triangle.incircle(*TRIANGLE)
-    assert c == INCIRCLE_CENTER
-    assert r == INCIRCLE_RADIUS

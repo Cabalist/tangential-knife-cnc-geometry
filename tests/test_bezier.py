@@ -2,18 +2,10 @@
 
 from __future__ import annotations
 
-import math
-from typing import TYPE_CHECKING
-
-import numpy as np
 import pytest
 
 import geom2d
 import geom2d.const
-from geom2d import bezier
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 CURVE1 = ((1.6, 3.3), (3.6, 1.8), (4.8, 2.2), (4.8, 2.8))
 BIARC_COUNT = 12
@@ -121,9 +113,7 @@ def test_biarcs() -> None:
     _verify_biarc_hausdorff(curve, biarcs, BIARC_TOLERANCE)
 
 
-def _verify_biarc_hausdorff(
-    curve: geom2d.CubicBezier, biarcs: list[geom2d.Arc], tolerance: float
-) -> None:
+def _verify_biarc_hausdorff(curve: geom2d.CubicBezier, biarcs: list[geom2d.Arc], tolerance: float) -> None:
     maxhd: float = 0
     for arc in biarcs:
         hd = curve.hausdorff_distance(arc, ndiv=100)
@@ -160,41 +150,3 @@ def test_find_roots() -> None:
 
     f1 = geom2d.CubicBezier(*RC2).roots()
     assert f1 == RC2_INFL
-
-
-def test_bezier_circle() -> None:
-    r = CIRCLE1_R
-    x, y = CIRCLE1_CENTER
-
-    curves = bezier.bezier_circle((x, y), r)
-    _verify_circle_hausdorff(x, y, r, curves, 0.0006863)
-
-    curves = bezier.bezier_circle_2((x, y), r)
-    _verify_circle_hausdorff(x, y, r, curves, 0.0001945)
-
-
-def _verify_circle_hausdorff(
-    x: float,
-    y: float,
-    r: float,
-    curves: Sequence[geom2d.CubicBezier],
-    max_hd: float,
-) -> None:
-    # Circle quadrant subdivisions
-    p1 = (x, r + y)
-    p2 = (r + x, y)
-    p3 = (x, -r + y)
-    p4 = (-r + x, y)
-    arc_endpoints = ((p1, p2), (p2, p3), (p3, p4), (p4, p1))
-
-    for curve, p in zip(curves, arc_endpoints):
-        a = geom2d.Arc(p[0], p[1], r, math.pi / 2, (x, y))
-        hd = curve.hausdorff_distance(a, ndiv=100)
-        assert hd < (max_hd + geom2d.const.EPSILON)
-
-
-def test_arc_bezier_h() -> None:
-    assert geom2d.float_eq(bezier.arc_bezier_h(math.pi / 2), 0.55191497)
-    assert geom2d.float_eq(bezier.arc_bezier_h((2 * math.pi) / 3), 0.76808599)
-    for n in np.linspace(-math.pi, math.pi, num=100):
-        assert bezier.arc_bezier_h(n) >= 0

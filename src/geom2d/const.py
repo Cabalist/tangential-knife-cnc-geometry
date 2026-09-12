@@ -13,14 +13,10 @@ at import time due to this possible mutability.
 """
 
 # pylint: disable=global-statement
-# ruff: file-ignore[global-statement]
 from __future__ import annotations
 
 import math
-import os
 import sys
-
-DEBUG = bool(os.environ.get("DEBUG", os.environ.get("GEOM2D_DEBUG")))
 
 TAU: float = math.pi * 2.0
 """Commonly used constant 2 * *pi*."""
@@ -132,7 +128,7 @@ def float_eq3(a: float, b: float, tolerance: float | None = None) -> bool:
     # Avoid function calls to max/abs
     aa = a if a >= 0 else -a
     bb = b if b >= 0 else -b
-    ab_max = aa if aa > bb else bb  # ruff: ignore[if-expr-min-max]
+    ab_max = aa if aa > bb else bb
 
     if ab_max > 1.0:
         tolerance *= ab_max  # scale for larger numbers
@@ -151,14 +147,12 @@ def angle_eq(a: float, b: float, tolerance: float | None = None) -> bool:
     # Avoid function calls to max/abs
     aa = a if a >= 0 else -a
     bb = b if b >= 0 else -b
-    ab_max = aa if aa > bb else bb  # ruff: ignore[if-expr-min-max]
+    ab_max = aa if aa > bb else bb
 
     if ab_max > 1.0:
         tolerance *= ab_max  # scale for larger numbers
 
-    return (a - b if a > b else b - a) < tolerance or (
-        abs(math.pi - aa) < tolerance and abs(math.pi - bb) < tolerance
-    )
+    return (a - b if a > b else b - a) < tolerance or (abs(math.pi - aa) < tolerance and abs(math.pi - bb) < tolerance)
 
 
 def is_zero(value: float) -> bool:
