@@ -1,0 +1,22 @@
+# Dependabot version updates. Version updates start as soon as this file is on
+# the default branch; security updates are a repository setting
+# (Settings > Code security > Dependabot).
+version: 2
+updates:
+  # The actions the workflows pin (checkout, setup-uv, Pages, artifacts, publishing).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Development and docs tools locked in uv.lock (the library has no runtime dependencies).
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      tooling:
+        patterns: ["*"]
