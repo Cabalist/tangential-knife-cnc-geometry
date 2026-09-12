@@ -14,4 +14,5 @@ geom2d
     arc
     bezier
     box
+    segment
     util
