@@ -1,216 +1,149 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "utl-geom2d"
-version = "0.3.3"
-authors = [{name = "Claude Zervas", email = "claude@utlco.com"}]
-description = "Simple 2D geometry package"
+version = "1.0.0"
+description = "2D geometry kernel for turning SVG paths into cutting toolpaths: points, lines, circular arcs, cubic Béziers, biarcs, tangent continuity"
 readme = "README.rst"
-requires-python = ">=3.10"
-license = {file = "LICENSE"}
+requires-python = ">=3.14"
+license = "LGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Ryan Jarvis", email = "ryan@technoloft.com" }]
+maintainers = [{ name = "Ryan Jarvis", email = "ryan@technoloft.com" }]
+keywords = ["2d", "geometry", "bezier", "biarc", "toolpath", "gcode"]
 classifiers = [
-    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
 ]
-keywords = ["2d", "geometry", "computational geometry", "bezier"]
-dependencies = ["typing_extensions"]
-
-[project.optional-dependencies]
-test = ["pytest", "numpy"]
-dev = [
-    "pytest",
-    "ruff",
-    "mypy",
-    "numpy",
-    "sphinx",
-    "sphinx-autobuild",
-    "sphinx_rtd_theme"
-]
+# Pure standard library. No runtime dependencies.
+dependencies = []
 
 [project.urls]
-repository = "https://github.com/utlco/utl-geom2d"
+repository = "https://github.com/Cabalist/utl-geom2d"
 
-[project.scripts]
+[dependency-groups]
+dev = [
+    "numpy",  # legacy tests only; removed when the kernel tests are rewritten
+    "prek",
+    "pyrefly",
+    "pytest",
+    "pytest-randomly",
+    "pytest-xdist",
+    "ruff",
+    "ty",
+]
+docs = [
+    "sphinx",
+    "sphinx-autobuild",
+    "furo",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["geom2d*"]
+
+[tool.setuptools.package-data]
+geom2d = ["py.typed"]
 
 [tool.pytest.ini_options]
-minversion="6.0"
-addopts = "-ra -q -s"
-testpaths = ["test",]
-
-[tool.pylint.MAIN]
-extension-pkg-allow-list = ["lxml.etree"]
-
-[tool.pylint."MESSAGES CONTROL"]
-ignore-paths = [
-    ".*saved.*",
-    ".*unused.*",
-    ".*contrib.*"
-]
-disable = [
-    "too-many-locals",
-    "too-many-lines",
-    "missing-function-docstring",
-    "consider-using-enumerate",
-    "too-few-public-methods",
-    "too-many-public-methods",
-    "too-many-arguments",
-    "too-many-instance-attributes",
-    "too-many-branches",
-    "too-many-boolean-expressions",
-    "fixme"
-]
-
-[tool.pylint.VARIABLES]
-variable-rgx = "^_?[a-z][a-z0-9_]*$"
-attr-rgx = "^_{0,2}[a-z][a-z0-9_]*$"
-argument-rgx = "^_?[a-z][a-z0-9_]*$"
-method-rgx = "(?x)^(?:(?P<exempt>_[a-z0-9_]+__|(test|assert)_*[A-Z0-9][a-zA-Z0-9_]*|next)|(?P<snake_case>_{0,2}[a-z][a-z0-9_]*))$"
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = ["-n", "auto", "--dist=loadscope", "-ra"]
 
 [tool.ruff]
-preview = true
-target-version = "py310"
-output-format = "concise"
-extend-exclude = [
-    "venv",
-    "contrib",
-    "tmp",
-    "saved",
-    "unused",
-    "docs",
-]
-
+target-version = "py314"
+line-length = 120
+extend-exclude = ["docs"]
 
 [tool.ruff.lint]
-pylint.max-statements = 60
 select = [
-    "A",
-    "B",
-    "D",
-    "E",
-    "F",
-    "G",
-    "I",
-    "Q",
-    "W",
-    "N",
-    # "S", # asserts, non-crypto random, etc...
-    "ANN",
-    "AIR",
-    "ARG",
-    "BLE",
-    # "FBT", # boolean positional params...
-    "C4",
-    "C90",
-    "COM",
-    # "CPY", # copyright...
-    # "DOC", # docstring complaints
-    "DTZ",
-    "EM",
-    "ERA",
-    "EXE",
-    "FA",
-    # "FIX", # TODO complaints
-    "FLY",
-    "FURB",
-    "ICN",
-    "INP",
-    "INT",
-    "ISC",
-    "LOG",
-    "PD",
+    "E",      # pycodestyle errors
+    "F",      # pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "SIM",    # flake8-simplify
+    "ANN",    # annotations everywhere
+    "RUF",
+    "PTH",
+    "PIE",
     "PERF",
     "PGH",
-    "PIE",
-    "PL",
-    "PT",
-    "PTH",
-    "PYI",
-    "NPY",
-    "RET",
-    "RSE",
-    "RUF",
-    "SIM",
-    "SLF",
-    "SLOT",
-    "T20",
-    # "TD", # TODO complaints
-    "TC",
-    "TCH",
+    "G",
     "TID",
+    "PT",
+    "RET",
+    "ARG",
     "TRY",
-    "UP",
-    "YTT",
+    "PL",
+    "DTZ",
+    "T20",
+    "ISC",
+    "TC",
 ]
-extend-ignore = [
-    "zip-without-explicit-strict",
-    "missing-trailing-comma",
-    "undocumented-public-init",
-    "too-many-arguments",
-    "non-lowercase-variable-in-function",
-    "raw-string-in-exception",
-    "commented-out-code",
-    "f-string-in-exception",
-    "complex-structure",
-    "raise-vanilla-args",
-    "no-self-use", # should fix this
-    "literal-membership",
-    "magic-value-comparison",
-    "too-many-locals",
-    "too-many-positional-arguments",
-    "too-many-public-methods",
+ignore = [
+    "E501",    # line too long (handled by the formatter)
+    "PERF401",
+    "PERF403",
+    "PLR0912", # geometric algorithms are long by nature
+    "PLR0913", # geometry constructors take positional coordinates
+    "PLR0915",
+    "PLR0917",
+    "PLR2004", # geometry constants (0.5, 2.0, pi/2) are not magic
+    "TRY003",
 ]
+per-file-ignores = { "tests/**" = ["ANN", "PLR2004", "ARG001"] }
 
-[tool.ruff.lint.pydocstyle]
-convention = "google"
+[tool.ruff.lint.isort]
+known-first-party = ["geom2d"]
 
-[tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["unused-import", "undocumented-public-package"]
-"voronoi.py" = ["subclass-builtin"]
-"tests/*" = [
-    "print",
-    "pytest-raises-too-broad",
-    "typing-only-standard-library-import",
-    "undocumented-public-function",
-]
+[tool.ty.src]
+include = ["src", "tests"]
 
-[tool.mypy]
-mypy_path = "./src"
-python_version = "3.10"
-warn_return_any = true
-warn_unused_configs = true
-ignore_missing_imports = true
-check_untyped_defs = true
-exclude = [
-    "contrib",
-    "tmp",
-    "saved",
-    "unused",
-    "build",
-    "docs",
-]
+[tool.ty.environment]
+python-version = "3.14"
+# "." resolves the `tests` package so shared test helpers import as `tests.*`.
+root = ["./src", "."]
 
-[[tool.mypy.overrides]]
-module = "contrib.clipper"
-follow_imports = "skip"
+[tool.ty.rules]
+missing-type-argument = "error"
+possibly-missing-attribute = "error"
+possibly-missing-import = "error"
+possibly-unresolved-reference = "error"
+redundant-cast = "error"
+unused-ignore-comment = "error"
+unused-type-ignore-comment = "error"
 
-[tool.typos]
+[[tool.ty.overrides]]
+include = ["tests/**"]
+rules = { unresolved-attribute = "ignore" }
 
-[tool.typos.files]
-extend-exclude = [
-    "venv",
-    "__pycache__",
-    "saved",
-    "build",
-    "unused",
-    "test",
-    "contrib",
-    "tmp",
-    "out"
-]
+[tool.pyrefly]
+min-severity = "warn"
+project-includes = ["src", "tests"]
+python-version = "3.14"
+search-path = ["src", "."]
+preset = "strict"
 
-#[dependency-groups]
-#dev = [
-#    "geom2d",
-#]
+[tool.pyrefly.errors]
+redundant-cast = "error"
+# P.of() normalises foreign numeric types with explicit float() calls.
+unnecessary-type-conversion = "ignore"
+# Every hit is a `key=lambda` passed to sorted/min/max over a typed iterable;
+# pyrefly does not yet solve the lambda's parameter from the sibling argument,
+# ty infers and checks the same lambdas.
+implicit-any-lambda = "ignore"
 
+[[tool.pyrefly.sub-config]]
+matches = "tests/**/*"
+
+[tool.pyrefly.sub-config.errors]
+implicit-any-empty-container = "ignore"
+implicit-any-parameter = "ignore"
+implicit-any-type-argument = "ignore"
+missing-attribute = "ignore"

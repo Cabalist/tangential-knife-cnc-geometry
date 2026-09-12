@@ -12,10 +12,6 @@ BUILDDIR      = _build
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
-github:
-	@make html
-	@cp -a _build/html/. ../docs
-
 clean:
 	@rm -r _build generated
 

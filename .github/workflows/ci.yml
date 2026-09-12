@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    name: Lint, type check, test (Python 3.14)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --group dev
+      - run: uv run ruff format --check src tests
+      - run: uv run ruff check src tests
+      - run: uv run ty check
+      - run: uv run pyrefly check
+      - run: uv run pytest
+
+  optimized:
+    name: Test with assertions stripped (python -O)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --group dev
+      - run: uv run python -O -m pytest
