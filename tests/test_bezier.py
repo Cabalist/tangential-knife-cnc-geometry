@@ -51,6 +51,16 @@ def test_from_quadratic_is_exact():
         assert cubic.point_at(t).almost_equal(quad, tolerance=1e-12)
 
 
+def test_equal_curves_hash_equal():
+    rng = random.Random(23)
+    for _ in range(3_000):
+        curve = _random_curve(rng, 1e3)
+        jitter = P(rng.uniform(-1e-8, 1e-8), rng.uniform(-1e-8, 1e-8))
+        other = CubicBezier(curve.p1 + jitter, curve.c1, curve.c2 - jitter, curve.p2)
+        if curve == other:
+            assert hash(curve) == hash(other)
+
+
 def test_dataclass_protocol():
     assert CubicBezier.__match_args__ == ("p1", "c1", "c2", "p2")
     assert copy.deepcopy(ARCH) == ARCH

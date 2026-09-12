@@ -465,6 +465,24 @@ def test_intersect_circles_and_arcs():
 # ----- dataclass protocol and output ----------------------------------------------------
 
 
+def test_equal_arcs_hash_equal():
+    rng = random.Random(22)
+    for _ in range(2_000):
+        angle = rng.uniform(-3.0, 3.0)
+        if abs(angle) < 0.1:
+            continue
+        radius = rng.uniform(0.5, 50.0)
+        center = P(rng.uniform(-1e3, 1e3), rng.uniform(-1e3, 1e3))
+        start = rng.uniform(-PI, PI)
+        p1 = center + P.from_polar(radius, start)
+        p2 = center + P.from_polar(radius, start + angle)
+        a = Arc(p1, p2, radius, angle, center)
+        angle_jitter = 0.1 * const.EPSILON / radius  # keeps the swept endpoint within EPSILON of p2
+        b = Arc(p1, p2, radius + rng.uniform(-5e-9, 5e-9), angle + rng.uniform(-angle_jitter, angle_jitter), center)
+        if a == b:
+            assert hash(a) == hash(b)
+
+
 def test_copy_pickle_match_hash():
     arc = CCW_Q
     assert copy.deepcopy(arc) == arc

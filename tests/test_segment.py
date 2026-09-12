@@ -1,5 +1,6 @@
 """Segment protocol and path helpers."""
 
+import dataclasses
 import itertools
 import math
 
@@ -76,6 +77,35 @@ class Wrapped:
     def subdivide(self, t: float) -> tuple[Wrapped, Wrapped]:
         a, b = self.geom.subdivide(t)
         return (Wrapped(a, self.tag), Wrapped(b, self.tag))
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Cut:
+    """A consumer-style frozen record embedding kernel geometry."""
+
+    geom: Line | Arc
+    depth: float
+
+
+def test_frozen_records_embedding_geometry_are_hashable_and_matchable():
+    cut = Cut(Line(P(0, 0), P(1, 0)), 2.0)
+    same = Cut(Line(P(0, 0), P(1 + 1e-10, 0)), 2.0)
+    assert cut == same
+    assert hash(cut) == hash(same)
+    assert {cut: "a"}[same] == "a"
+    arc_cut = Cut(Arc.from_sweep(P(1, 0), P(0, 1), 1.0, PI / 2), 1.0)
+    match arc_cut.geom:
+        case Arc(p1, p2, radius, angle, center):
+            assert (p1, p2, radius, center) == (P(1, 0), P(0, 1), 1.0, P(0, 0))
+            assert angle == pytest.approx(PI / 2)
+        case Line(p1, p2):
+            pytest.fail("matched the wrong class")
+    match cut.geom:
+        case Arc():
+            pytest.fail("matched the wrong class")
+        case Line(p1, p2):
+            assert (p1, p2) == (P(0, 0), P(1, 0))
+    assert dataclasses.replace(cut, depth=3.0).geom is cut.geom
 
 
 # ----- protocol conformance ---------------------------------------------------

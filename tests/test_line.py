@@ -4,6 +4,7 @@ import copy
 import dataclasses
 import math
 import pickle
+import random
 
 import pytest
 
@@ -33,6 +34,18 @@ def test_equality_is_directional_and_hash_consistent():
     assert a.reversed().reversed() == a
     # Hashes of axis-aligned segments must not collapse onto a few buckets.
     assert len({hash(Line(P(i, 0), P(i, 1))) for i in range(200)}) > 190
+
+
+def test_equal_lines_hash_equal():
+    rng = random.Random(21)
+    for _ in range(5_000):
+        p1 = P(rng.uniform(-1e3, 1e3), rng.uniform(-1e3, 1e3))
+        p2 = P(rng.uniform(-1e3, 1e3), rng.uniform(-1e3, 1e3))
+        jitter = P(rng.uniform(-1e-8, 1e-8), rng.uniform(-1e-8, 1e-8))
+        a = Line(p1, p2)
+        b = Line(p1 + jitter, p2 - jitter)
+        if a == b:
+            assert hash(a) == hash(b)
 
 
 def test_copy_pickle_replace_match():
