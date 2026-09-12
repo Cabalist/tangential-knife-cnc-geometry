@@ -404,10 +404,15 @@ class CubicBezier:
         endpoint exactly; tangent directions agree at every joint within
         ``angle_eq`` (a ``Line`` is emitted only where the piece is straight:
         control points within ``EPSILON`` of the chord and both end tangents
-        along it), with one geometric exception: where the curve itself turns
+        along it), with two geometric exceptions. Where the curve itself turns
         through a region smaller than ``EPSILON`` (a cusp or near-cusp, turning
         radius below ``EPSILON``) the output has a corner at that point, because
-        no segment of length ``EPSILON`` or more can carry the turn. The
+        no segment of length ``EPSILON`` or more can carry the turn. Where a
+        bend is too shallow to be an arc (its center would lie beyond the
+        coordinate envelope, ``MAX_COORDINATE``) the piece becomes a line,
+        and the tangent mismatch at that line's ends is at most the bend's
+        own turn, ``chord / radius``, below ``1e-7`` radians per unit of
+        chord at the default ``EPSILON``. The
         distance check is an estimate: 16 curve samples per piece are measured
         to the segments and 7 samples per segment to the curve, so a peak
         between samples can exceed ``tolerance`` by a small amount. It is not

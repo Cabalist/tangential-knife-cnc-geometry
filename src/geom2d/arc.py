@@ -148,10 +148,13 @@ class Arc:
         """Create the arc through ``p1`` and ``p2`` whose tangent at ``p1`` points at ``tangent_point``.
 
         ``tangent_point`` is a point, not a vector: the tangent direction is
-        ``tangent_point - p1``. Returns None when the arc is degenerate
-        (coincident points) or would be a straight line (the tangent runs
-        along the chord, in either direction). With ``reverse`` the arc runs
-        from ``p2`` back to ``p1``.
+        ``tangent_point - p1``. Returns None when no arc is the right answer:
+        the points are degenerate (coincident), the tangent runs along the
+        chord in either direction, or the bend is so shallow that its center
+        would lie beyond the coordinate envelope (``MAX_COORDINATE``), where
+        rounding could no longer keep the invariant through later
+        operations. A tiny arc with a real turn is still an arc: its center
+        is nearby. With ``reverse`` the arc runs from ``p2`` back to ``p1``.
         """
         p1 = P.of(p1)
         p2 = P.of(p2)
@@ -163,9 +166,12 @@ class Arc:
             return None
         chord = p1.distance(p2)
         radius = abs(chord / (2.0 * math.sin(angle / 2.0)))
+        center = calc_center(p1, p2, radius, angle)
+        if max(abs(center.x), abs(center.y)) > const.MAX_COORDINATE:
+            return None
         if reverse:
-            return cls.from_sweep(p2, p1, radius, -angle)
-        return cls.from_sweep(p1, p2, radius, angle)
+            return cls(p2, p1, radius, -angle, center)
+        return cls(p1, p2, radius, angle, center)
 
     # ----- private angular helpers --------------------------------------
 

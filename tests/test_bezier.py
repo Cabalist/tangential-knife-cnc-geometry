@@ -9,13 +9,14 @@ import random
 
 import pytest
 
-from geom2d import ApproximationError, GeometryError, P, angle_eq, const, segments_are_g1
+from geom2d import ApproximationError, GeometryError, P, angle_eq, calc_rotation, const, heading_change, segments_are_g1
 from geom2d.arc import Arc
 from geom2d.bezier import CubicBezier
 from geom2d.box import Box
 from geom2d.line import Line
 from tests.helpers import XY, g1_everywhere, is_connected_chain
 
+PI_2 = math.pi / 2
 ARCH = CubicBezier(P(0, 0), P(1, 2), P(3, 2), P(4, 0))
 S_CURVE = CubicBezier(P(0, 0), P(2, 3), P(4, -3), P(6, 0))  # one inflection at t = 0.5
 LOOP = CubicBezier(P(0, 0), P(4, 3), P(-2, 3), P(2, 0))
@@ -463,6 +464,53 @@ def test_collinear_curves_that_double_back_report_their_extent():
     assert curve.intersect_line(Line(P(3, 0), P(4, 0)), on_line=True) == []
     lifted = Line(P(2, 0.5e-8), P(2.5, 0.5e-8))  # still within EPSILON of the curve's line
     assert len(curve.intersect_line(lifted, on_line=True)) == 2
+
+
+def _circle_piece(radius: float, chord: float, turn: float = 0.0, offset: P | None = None) -> CubicBezier:
+    """The cubic approximating a circular arc of the given radius and chord, rotated and moved."""
+    offset = P(0, 0) if offset is None else offset
+    half = math.asin(chord / (2 * radius))
+    k = 4 / 3 * math.tan(half / 2) * radius  # control distance for a circular arc of sweep 2 * half
+    p1 = P.from_polar(radius, -half) - P(radius, 0)
+    p2 = P.from_polar(radius, half) - P(radius, 0)
+    controls = (p1, p1 + P.from_polar(k, -half + PI_2), p2 - P.from_polar(k, half + PI_2), p2)
+    return CubicBezier(*(q.rotate(turn) + offset for q in controls))
+
+
+def test_shallow_bends_become_lines_instead_of_failing():
+    # A 100-unit piece of a circle of radius 1e9: its arcs would need a center beyond MAX_COORDINATE.
+    # Such a bend is a line wherever the picture sits, never a GeometryError, and the tangent
+    # mismatch at the line's ends is bounded by the bend's own turn (1e-7 here).
+    radius = 1e9
+    turn = 100.0 / radius
+    for rotation in (0.0, 0.3, 1.0, 2.2, -0.7):
+        for offset in (P(0, 0), P(7.1, -3.3), P(123.4, 56.7)):
+            shallow = _circle_piece(radius, 100.0, rotation, offset)
+            assert not shallow.is_straight  # the tangents turn by 1e-7, more than angle_eq allows
+            chain = shallow.biarc_approximation(0.001)
+            assert is_connected_chain(shallow, chain)
+            assert all(isinstance(s, Line) for s in chain)
+            for a, b in itertools.pairwise(chain):
+                assert abs(heading_change(a, b)) <= turn + 1e-12
+            assert abs(calc_rotation(shallow.start_tangent_angle, chain[0].start_tangent_angle)) <= turn
+            assert abs(calc_rotation(chain[-1].end_tangent_angle, shallow.end_tangent_angle)) <= turn
+            assert shallow.hausdorff_distance(chain) <= 0.001
+    # A long shallow bend (sagitta 0.0125) is subdivided to meet the tolerance: still lines, still bounded.
+    long_bend = _circle_piece(radius, 1e4, 0.3, P(7.1, -3.3))
+    long_chain = long_bend.biarc_approximation(0.001)
+    assert is_connected_chain(long_bend, long_chain)
+    assert len(long_chain) > 2
+    assert all(isinstance(s, Line) for s in long_chain)
+    longest = max(s.length for s in long_chain)
+    for a, b in itertools.pairwise(long_chain):
+        assert abs(heading_change(a, b)) <= 2 * longest / radius
+    assert long_bend.hausdorff_distance(long_chain) <= 0.001 * 1.05
+    # Inside the envelope the same bend is an arc, tangent-continuous at the default tolerance.
+    gentle = _circle_piece(5e6, 100.0, 0.3, P(7.1, -3.3))
+    arcs = gentle.biarc_approximation(0.001)
+    assert is_connected_chain(gentle, arcs)
+    assert any(isinstance(s, Arc) for s in arcs)
+    assert g1_everywhere(arcs)
 
 
 def test_biarc_merge_keeps_the_pair_when_the_merged_arc_is_invalid():

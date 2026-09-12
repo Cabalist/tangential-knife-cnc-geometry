@@ -71,7 +71,9 @@ Geometry
   with their endpoints only within a job's precision (the sweep is adjusted
   to reach ``p2``, a chord slightly longer than the diameter grows the
   radius), so parser-built arcs become exactly consistent; data consistent
-  within ``EPSILON`` keeps its sweep verbatim. New: ``subdivide_equal``,
+  within ``EPSILON`` keeps its sweep verbatim. ``from_two_points_and_tangent``
+  returns None, not an error, for a bend whose center would lie beyond
+  ``MAX_COORDINATE``. New: ``subdivide_equal``,
   ``split_max_sweep``, ``is_clockwise``, ``direction``, tangent vectors,
   ``tangent_at``. ``extend`` extends. ``offset(+d)`` is left of travel,
   like ``Line.offset``. ``to_svg_path`` writes a full circle as two half
@@ -103,7 +105,10 @@ Geometry
   ``max_arc_angle`` splits arcs to a maximum sweep. ``strict`` is the
   default: a piece that cannot meet the tolerance within ``max_depth``
   raises ``ApproximationError``; ``strict=False`` returns the best effort.
-  Tolerances below ``EPSILON`` are refused. Pieces shorter than ``EPSILON``
+  Tolerances below ``EPSILON`` are refused. A bend too shallow to be an
+  arc (its center beyond ``MAX_COORDINATE``) becomes a line with a
+  bounded tangent mismatch instead of escaping as ``GeometryError``.
+  Pieces shorter than ``EPSILON``
   are absorbed by their neighbours (at either end of the chain) so the
   output stays exactly connected with nothing degenerate; a piece whose
   ends coincide is halved regardless of ``max_depth``; a non-degenerate
@@ -131,7 +136,8 @@ Geometry
   constant before assigning any; ``cross_is_zero`` and ``is_parallel`` treat
   an exactly zero cross product as parallel at any scale, so coincident
   points are collinear. New ``cell``, ``is_zero_rel``, ``cross_is_zero``,
-  ``is_parallel``, ``MIN_EPSILON``. Removed ``EPSILON_MINUS``, the hash
+  ``is_parallel``, ``MIN_EPSILON``, ``MAX_COORDINATE`` (the coordinate
+  envelope, ``EPSILON * 1e15``). Removed ``EPSILON_MINUS``, the hash
   primes, ``MAX_XY``, ``float_eq1``/``float_eq2`` and ``DEBUG``. The
   ``DEBUG`` environment variable no longer does anything. ``angle_eq``
   reduces with a signed remainder, so it is exact near zero and symmetric

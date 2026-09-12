@@ -14,8 +14,10 @@ def test_derived_constants_follow_epsilon(restore_epsilon: None):
     assert pytest.approx(1e-12) == const.EPSILON2
     assert const.EPSILON_PRECISION == 6
     assert const.REPSILON == 1e6
+    assert pytest.approx(1e9) == const.MAX_COORDINATE
     const.set_epsilon(1e-9)
     assert const.EPSILON_PRECISION == 9
+    assert pytest.approx(1e6) == const.MAX_COORDINATE
     assert const.float_eq(1.0, 1.0 + 5e-10)
     assert not const.float_eq(1.0, 1.0 + 5e-9)
 
@@ -24,10 +26,10 @@ def test_derived_constants_follow_epsilon(restore_epsilon: None):
 def test_set_epsilon_rejects_bad_values_without_mutating(bad: float):
     # Validation happens before any constant changes, and the derived constants
     # are all computed before any is assigned.
-    before = (const.EPSILON, const.EPSILON2, const.EPSILON_PRECISION, const.REPSILON)
+    before = (const.EPSILON, const.EPSILON2, const.EPSILON_PRECISION, const.REPSILON, const.MAX_COORDINATE)
     with pytest.raises(ValueError, match="epsilon"):
         const.set_epsilon(bad)
-    assert before == (const.EPSILON, const.EPSILON2, const.EPSILON_PRECISION, const.REPSILON)
+    assert before == (const.EPSILON, const.EPSILON2, const.EPSILON_PRECISION, const.REPSILON, const.MAX_COORDINATE)
     assert const.float_eq(1.0, 1.0)
 
 

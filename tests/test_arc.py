@@ -262,6 +262,23 @@ def test_from_two_points_and_tangent_uses_point_semantics():
     assert Arc.from_two_points_and_tangent(P(0, 0), P(1, 0), P(5, 0)) is None  # collinear: a line
     # Nearly coincident endpoints are degenerate even when they fall in different hash cells.
     assert Arc.from_two_points_and_tangent(P(0, 0), P(1, 0), P(6e-9, 0)) is None
+    # A bend whose center would lie beyond MAX_COORDINATE is fitted as no arc, never an error,
+    # however the picture is placed; inside the envelope it is an arc.
+    for turn in (0.0, 0.3, 2.2):
+        for offset in (ORIGIN, P(7.1, -3.3), P(123.4, 56.7)):
+            far = Arc.from_two_points_and_tangent(
+                offset, offset + P.from_polar(1, turn + 1e-7), offset + P.from_polar(1e4, turn)
+            )
+            assert far is None  # radius 5e10
+            near = Arc.from_two_points_and_tangent(
+                offset, offset + P.from_polar(1, turn + 1e-5), offset + P.from_polar(10, turn)
+            )
+            assert near is not None  # radius 5e5
+            assert abs(near.center.x) < const.MAX_COORDINATE
+    # A tiny arc with a real turn is still an arc: its center is nearby.
+    tiny = Arc.from_two_points_and_tangent(P(0, 0), P(1e-6, 1e-6), P(2e-6, 0))
+    assert tiny is not None
+    assert tiny.radius == pytest.approx(math.sqrt(2) * 1e-6)
     rev = Arc.from_two_points_and_tangent(P(1, 1), P(3, 1), P(0, 0), reverse=True)
     assert rev is not None
     assert rev.p1 == P(0, 0)

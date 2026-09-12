@@ -64,8 +64,10 @@ Job-scoped tolerance
 
 Coordinate envelope
     A double rounds a coordinate of magnitude ``|x|`` to about ``1e-16 *
-    |x|``, so ``EPSILON`` is meaningful for ``|x|`` below about ``1e7`` at
-    the default. A direction derived from a feature of size ``s`` carries
+    |x|``, so ``EPSILON`` is meaningful for ``|x|`` below
+    ``MAX_COORDINATE`` (``EPSILON * 1e15``, about ``1e7`` at the default);
+    the library does not construct points beyond it, and a bend whose arc
+    center would fall outside it is fitted as a line. A direction derived from a feature of size ``s`` carries
     that rounding divided by ``s``, so tangent directions agree within
     ``EPSILON`` only for features larger than about ``1e-8 * |x|`` (a radius
     of ``0.01`` at ``|x| = 1e6``). The biarc construction runs relative to
@@ -140,10 +142,12 @@ Approximation
     tolerance is an estimate that a peak between samples can exceed by a
     small amount; ``hausdorff_distance`` gives a finer estimate of a result,
     and neither is a proof. The tangent contract at the joints holds within
-    ``EPSILON`` whether or not the tolerance was met, subject to the two
-    limits above: the coordinate envelope's feature-size rule, and features
-    of the curve smaller than ``EPSILON`` (cusps, and pieces too short to be
-    segments), which become corners. A non-degenerate curve (control points
+    ``EPSILON`` whether or not the tolerance was met, subject to the limits
+    above: the coordinate envelope's feature-size rule; features of the
+    curve smaller than ``EPSILON`` (cusps, and pieces too short to be
+    segments), which become corners; and bends too shallow to be arcs (a
+    center beyond ``MAX_COORDINATE``), which become lines whose ends carry
+    the bend's own turn, at most ``chord / radius`` radians. A non-degenerate curve (control points
     not all within ``EPSILON`` of each other) never yields an empty result:
     a piece whose ends coincide is halved regardless of ``max_depth``, and
     if nothing at least ``EPSILON`` long can span the curve,

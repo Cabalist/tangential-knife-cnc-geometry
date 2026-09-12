@@ -43,8 +43,13 @@ Lifetime of ``EPSILON``:
 Coordinate envelope:
     A double keeps about 16 significant digits, so a coordinate of magnitude
     ``|x|`` is rounded to about ``1e-16 * |x|``. Tolerances are absolute
-    distances, so ``EPSILON`` must stay well above that rounding: roughly
-    ``|x| < 1e7`` at the default ``1e-8``. A direction derived from a
+    distances, so ``EPSILON`` must stay well above that rounding:
+    :data:`MAX_COORDINATE` (``EPSILON * 1e15``, so ``1e7`` at the default)
+    is the magnitude at which a chain of a few operations still keeps its
+    rounding an order of magnitude below ``EPSILON``. Constructions that
+    would place a point beyond it, such as the center of a very shallow
+    arc, are not attempted: the arc fit treats such a bend as a line. A
+    direction derived from a
     feature of size ``s`` (a radius, a segment length) carries that rounding
     divided by ``s``, about ``1e-16 * |x| / s`` radians, so tangent
     directions agree within ``EPSILON`` only for features larger than
@@ -88,13 +93,16 @@ EPSILON_PRECISION: int = 8
 REPSILON: float = 1e8
 """``10 ** EPSILON_PRECISION``; multiplies a coordinate into grid-cell units."""
 
+MAX_COORDINATE: float = 1e7
+"""Largest coordinate magnitude the library constructs: ``EPSILON * 1e15`` (see the coordinate envelope)."""
+
 
 def _derive(eps: float) -> None:
     """Set ``EPSILON`` and every constant derived from it, computing all of them before assigning any."""
-    global EPSILON, EPSILON2, EPSILON_PRECISION, REPSILON
+    global EPSILON, EPSILON2, EPSILON_PRECISION, REPSILON, MAX_COORDINATE
     precision = max(0, round(abs(math.log10(eps))))
     repsilon = 10.0**precision
-    EPSILON, EPSILON2, EPSILON_PRECISION, REPSILON = eps, eps * eps, precision, repsilon
+    EPSILON, EPSILON2, EPSILON_PRECISION, REPSILON, MAX_COORDINATE = eps, eps * eps, precision, repsilon, eps * 1e15
 
 
 _derive(EPSILON)
