@@ -132,9 +132,6 @@ class P:
             return NotImplemented
         return P(self.x / scalar, self.y / scalar)
 
-    def __abs__(self) -> float:
-        return math.hypot(self.x, self.y)
-
     # ----- derived values -----------------------------------------------
 
     @property
@@ -159,15 +156,15 @@ class P:
 
     @property
     def unit(self) -> P:
-        """The vector scaled to unit length; the zero vector stays zero."""
-        if self.is_zero:
-            return P(0.0, 0.0)
-        ln = self.length
-        return P(self.x / ln, self.y / ln)
+        """The vector scaled to unit length; only the exact zero vector stays zero.
 
-    def to_polar(self) -> tuple[float, float]:
-        """Return ``(radius, angle)``."""
-        return (self.length, self.angle)
+        A vector shorter than ``EPSILON`` still has a direction; use
+        :attr:`is_zero` to decide whether a length is negligible.
+        """
+        ln = self.length
+        if ln == 0.0:
+            return P(0.0, 0.0)
+        return P(self.x / ln, self.y / ln)
 
     def normal(self, *, left: bool = True) -> P:
         """Return the perpendicular vector, to the left of travel by default."""
@@ -175,7 +172,7 @@ class P:
 
     def rotate(self, angle: float, origin: P | None = None) -> P:
         """Return a copy rotated counter-clockwise by ``angle`` radians about ``origin``."""
-        if const.is_zero(angle):
+        if angle == 0.0:
             return self
         ox, oy = (0.0, 0.0) if origin is None else (origin.x, origin.y)
         dx = self.x - ox

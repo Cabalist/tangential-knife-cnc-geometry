@@ -4,13 +4,14 @@ from .arc import Arc
 from .bezier import CubicBezier
 from .box import Box
 from .const import TAU, angle_eq, float_eq, is_zero, set_epsilon
-from .errors import DegenerateGeometryError, GeometryError
+from .errors import ApproximationError, DegenerateGeometryError, GeometryError
 from .line import Line
 from .point import HasXY, P, PointLike
 from .util import calc_rotation, normalize_angle
 
 __all__ = [
     "TAU",
+    "ApproximationError",
     "Arc",
     "Box",
     "CubicBezier",

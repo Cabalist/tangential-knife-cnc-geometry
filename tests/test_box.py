@@ -2,7 +2,6 @@
 
 import copy
 import pickle
-from typing import Any
 
 import pytest
 
@@ -15,9 +14,6 @@ def test_corners_are_canonicalised():
     assert a.p1 == P(1.0, 2.0)
     assert a.p2 == P(3.0, 4.0)
     assert a == Box(P(1.0, 2.0), P(3.0, 4.0))
-    raw: Any = (1, 4)
-    raw2: Any = (3, 2)
-    assert Box(raw, raw2) == a  # untyped point-like input is coerced at runtime
 
 
 def test_dimensions():
@@ -34,7 +30,7 @@ def test_dimensions():
 
 
 def test_from_points_single_pass_generator():
-    # A2.10: the old bounding_box() zipped the iterable twice.
+    # A generator is consumed once.
     b = Box.from_points(P(x, 2 * x) for x in range(3))
     assert b == Box(P(0.0, 0.0), P(2.0, 4.0))
     assert Box.from_points([(5, 5)]) == Box(P(5.0, 5.0), P(5.0, 5.0))  # PointLike input

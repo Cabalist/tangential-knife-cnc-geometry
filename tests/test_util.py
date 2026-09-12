@@ -55,7 +55,7 @@ def test_calc_rotation_bounds():
 
 
 def test_float_formatter_strips_only_after_a_decimal_point():
-    # A1.2: rstrip("0") on "100" produced "1".
+    # Trailing zeros are stripped only after a decimal point.
     fmt0 = util.float_formatter(precision=0)
     assert fmt0(100.0) == "100"
     assert fmt0(10.0) == "10"

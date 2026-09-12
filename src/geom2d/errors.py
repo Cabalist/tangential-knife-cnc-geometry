@@ -7,3 +7,7 @@ class GeometryError(ValueError):
 
 class DegenerateGeometryError(GeometryError):
     """The input is degenerate: zero length, zero area, or coincident points."""
+
+
+class ApproximationError(GeometryError):
+    """An approximation could not reach the requested tolerance within its limits."""

@@ -9,17 +9,10 @@ from typing import Any
 
 import pytest
 
-from geom2d import GeometryError, P
+from geom2d import GeometryError, P, const
+from tests.helpers import XY
 
 RAW_PAIR = (1.0, 2.0)
-
-
-class _XY:
-    """A foreign point type exposing x/y attributes (like an SVG parser's point)."""
-
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
 
 
 # ----- construction ------------------------------------------------------
@@ -53,8 +46,8 @@ def test_of_identity_and_conversions():
     assert P.of(p) is p
     assert P.of((1, 2)) == p
     assert P.of([1.0, 2.0]) == p
-    assert P.of(_XY(1, 2)) == p
-    assert type(P.of(_XY(1, 2)).x) is float
+    assert P.of(XY(1, 2)) == p
+    assert type(P.of(XY(1, 2)).x) is float
 
 
 @pytest.mark.parametrize("bad", [(1,), (1, 2, 3), "ab", ("a", "b"), object(), None, 5])
@@ -63,19 +56,17 @@ def test_of_rejects_non_points(bad):
         P.of(bad)
 
 
-def test_from_polar_and_to_polar():
+def test_from_polar():
     p = P.from_polar(2.0, math.pi / 2)
     assert p.almost_equal(P(0.0, 2.0))
-    r, a = P(0.0, -3.0).to_polar()
-    assert r == pytest.approx(3.0)
-    assert a == pytest.approx(-math.pi / 2)
+    assert P(0.0, -3.0).angle == pytest.approx(-math.pi / 2)
 
 
 # ----- equality and hashing (RC3) ------------------------------------------
 
 
 def test_eq_and_hash_agree_on_grid_cells():
-    # A1.7: tolerant eq with grid hash split equal points across buckets.
+    # Equal points must hash equal (grid-cell identity).
     p1 = P(0.5e-8 - 1e-12, 0.0)
     p2 = P(0.5e-8 + 1e-12, 0.0)
     assert (p1 == p2) == (hash(p1) == hash(p2))
@@ -99,7 +90,7 @@ def test_eq_implies_equal_hash_property():
 
 
 def test_eq_with_non_points_is_false_not_an_error():
-    # A1.5: the old __eq__ indexed any Sequence and raised TypeError/IndexError.
+    # Comparing with non-points is False, never an error.
     p = P(1.0, 2.0)
     assert p != "ab"
     assert p != (1.0, 2.0)
@@ -160,7 +151,6 @@ def test_vector_arithmetic():
     assert a * 2 == P(2.0, 4.0)
     assert 2.0 * a == P(2.0, 4.0)
     assert a / 2 == P(0.5, 1.0)
-    assert abs(P(3.0, 4.0)) == 5.0
     assert sum([a, b, a], P(0, 0)) == P(5.0, 3.0)
 
 
@@ -177,7 +167,7 @@ def test_vector_arithmetic():
     ],
 )
 def test_unsupported_operands_raise_type_error(expr):
-    # D.12: operators returned bare ValueError or silently concatenated tuples (A1.10).
+    # Unsupported operands raise TypeError; tuples never concatenate.
     with pytest.raises(TypeError):
         expr(P(1.0, 2.0), P(3.0, 4.0))
 
@@ -199,6 +189,8 @@ def test_length_angle_unit_normal():
     assert P(-1.0, 0.0).angle == pytest.approx(math.pi)
     assert p.unit.almost_equal(P(0.6, 0.8))
     assert P(0.0, 0.0).unit == P(0.0, 0.0)
+    tiny = P(3e-9, 4e-9).unit  # shorter than EPSILON but still a direction
+    assert tiny.almost_equal(P(0.6, 0.8))
     assert P(0.0, 0.0).is_zero
     assert P(0.5e-8, 0.0).is_zero
     assert not P(1e-7, 0.0).is_zero
@@ -236,12 +228,12 @@ def test_distances():
 
 
 def test_winding_sign_and_scale_independence():
-    # C.3: positive means counter-clockwise (left), consistent with cross().
+    # Positive means counter-clockwise (left), consistent with cross().
     o = P(0.0, 0.0)
     assert o.winding(P(1.0, 0.0), P(1.0, 1.0)) == 1
     assert o.winding(P(1.0, 0.0), P(1.0, -1.0)) == -1
     assert o.winding(P(1.0, 1.0), P(2.0, 2.0)) == 0
-    # A4.12 / A1.8: absolute EPSILON on a cross product collapsed tiny squares.
+    # Collinearity is a perpendicular distance, so scale does not matter.
     s = 1e-4
     assert P(0.0, 0.0).winding(P(s, 0.0), P(s, s)) == 1
     big = 1e6
@@ -261,6 +253,19 @@ def test_rotate():
     assert p.rotate(math.pi / 2).almost_equal(P(0.0, 1.0))
     assert p.rotate(math.pi / 2, origin=P(1.0, 1.0)).almost_equal(P(2.0, 1.0))
     assert p.rotate(0.0) is p
+    # A tiny angle at a large radius is a real displacement and must not be dropped.
+    far = P(1e6, 0.0).rotate(1e-9)
+    assert far.almost_equal(P(1e6 * math.cos(1e-9), 1e6 * math.sin(1e-9)))
+    assert far.distance(P(1e6, 0.0)) == pytest.approx(1e-3, rel=1e-6)
+
+
+def test_hash_follows_the_current_epsilon(restore_epsilon):
+    # Documented policy: set_epsilon is called once at startup, before geometry is hashed.
+    p = P(1, 2)
+    d = {p: 1}
+    assert p in d
+    const.set_epsilon(1e-6)
+    assert p not in d
 
 
 def test_to_svg():

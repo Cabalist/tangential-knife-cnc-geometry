@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from . import const, util
 from .arc import Arc
 from .box import Box
-from .errors import GeometryError
+from .errors import ApproximationError, GeometryError
 from .line import Line
-from .point import P
+from .point import P, PointLike
 
 _MAX_LENGTH_DEPTH = 24
 """Recursion cap for :meth:`CubicBezier.length`; 2**24 subdivisions is far past float resolution."""
@@ -19,7 +19,8 @@ class CubicBezier:
     """A cubic Bézier curve ``p1 -> c1 -> c2 -> p2``.
 
     Equality is field-wise on the ``EPSILON`` grid; ``reversed()`` gives a
-    different curve object tracing the same shape backwards. A curve whose
+    different curve object tracing the same shape backwards. The constructor
+    takes ``P`` fields; :meth:`from_quadratic` accepts any point-like input. A curve whose
     control polygon is shorter than ``EPSILON`` is *degenerate*: its tangent
     angles are ``0.0`` and ``biarc_approximation`` returns no segments.
     """
@@ -29,20 +30,18 @@ class CubicBezier:
     c2: P
     p2: P
 
-    def __post_init__(self) -> None:
-        for name in ("p1", "c1", "c2", "p2"):
-            value = getattr(self, name)
-            if type(value) is not P:
-                object.__setattr__(self, name, P.of(value))
-
     # ----- construction -------------------------------------------------
 
     @classmethod
-    def from_quadratic(cls, p1: P, control: P, p2: P) -> "CubicBezier":
-        """Degree-elevate a quadratic Bézier ``p1 -> control -> p2`` to a cubic (exact)."""
-        c1 = p1 + (control - p1) * (2.0 / 3.0)
-        c2 = p2 + (control - p2) * (2.0 / 3.0)
-        return cls(p1, c1, c2, p2)
+    def from_quadratic(cls, p1: PointLike, control: PointLike, p2: PointLike) -> CubicBezier:
+        """Degree-elevate a quadratic Bézier ``p1 -> control -> p2`` to a cubic (exact).
+
+        Accepts any point-like input, such as a parser's own point type.
+        """
+        a = P.of(p1)
+        q = P.of(control)
+        b = P.of(p2)
+        return cls(a, a + (q - a) * (2.0 / 3.0), b + (q - b) * (2.0 / 3.0), b)
 
     # ----- derived values -----------------------------------------------
 
@@ -184,7 +183,7 @@ class CubicBezier:
 
     # ----- parametric structure -------------------------------------------
 
-    def subdivide(self, t: float) -> tuple["CubicBezier", "CubicBezier"]:
+    def subdivide(self, t: float) -> tuple[CubicBezier, CubicBezier]:
         """Split at parameter ``t`` (de Casteljau); the pieces share the split point exactly.
 
         Raises:
@@ -233,7 +232,7 @@ class CubicBezier:
         valid = sorted(t for t in roots if margin < t < 1.0 - margin)
         return tuple(valid)
 
-    def subdivide_inflections(self) -> tuple["CubicBezier", ...]:
+    def subdivide_inflections(self) -> tuple[CubicBezier, ...]:
         """Split at :meth:`inflections`; one to three curves."""
         params = self.inflections()
         if not params:
@@ -287,7 +286,7 @@ class CubicBezier:
         l0 = self.p1.distance(self.p2)
         if depth < _MAX_LENGTH_DEPTH and l1 - l0 > tolerance:
             a, b = self.subdivide(0.5)
-            return a._length(tolerance, depth + 1) + b._length(tolerance, depth + 1)  # noqa: SLF001
+            return a._length(tolerance, depth + 1) + b._length(tolerance, depth + 1)
         return 0.5 * l0 + 0.5 * l1
 
     # ----- intersections -----------------------------------------------------
@@ -329,8 +328,8 @@ class CubicBezier:
         tolerance: float = 0.001,
         *,
         max_depth: int = 4,
-        line_flatness: float | None = None,
         max_arc_angle: float | None = None,
+        strict: bool = False,
     ) -> list[Line | Arc]:
         """Approximate the curve with tangent-continuous circular arcs (and lines where it is straight).
 
@@ -343,34 +342,47 @@ class CubicBezier:
         degenerate segment; the first segment starts exactly at ``p1`` and
         the last ends exactly at ``p2``; consecutive segments share their
         endpoint exactly; tangent directions agree at every joint within
-        ``angle_eq``; every arc is within ``tolerance`` of the curve unless
-        ``max_depth`` was exhausted. A degenerate curve gives ``[]``.
+        ``angle_eq`` (a ``Line`` is emitted only where the piece is straight:
+        control points within ``EPSILON`` of the chord and both end tangents
+        along it), with one geometric exception: where the curve itself turns
+        through a region smaller than ``EPSILON`` (a cusp or near-cusp, turning
+        radius below ``EPSILON``) the output has a corner at that point, because
+        no segment of length ``EPSILON`` or more can carry the turn; the two-sided
+        Hausdorff distance between each piece and its segments, estimated by
+        sampling, is within ``tolerance`` unless ``max_depth`` was exhausted, in
+        which case the best effort is returned, or :class:`ApproximationError`
+        is raised when ``strict`` is set. A degenerate curve gives ``[]``.
 
         Args:
             tolerance: Maximum allowed distance between curve and arcs.
             max_depth: Maximum number of halvings per inflection-free piece.
-            line_flatness: A piece whose control points lie within this
-                distance of its chord becomes a ``Line``. Defaults to
-                ``EPSILON`` (scaled for large chords), i.e. only genuinely
-                straight pieces, which keeps the tangent contract exact.
-                Larger values trade tangent continuity for fewer segments.
             max_arc_angle: If given, every arc is split into equal pieces so
                 that ``|angle| <= max_arc_angle``.
+            strict: Raise :class:`ApproximationError` instead of returning a
+                best effort when some piece could not meet ``tolerance``
+                within ``max_depth``.
 
         Raises:
-            GeometryError: If ``tolerance`` is not positive or ``max_depth`` is negative.
+            GeometryError: If ``tolerance`` is below ``EPSILON`` (nothing in the library
+                resolves finer than that) or ``max_depth`` is negative.
+            ApproximationError: With ``strict``, if the tolerance could not be met.
         """
-        if not tolerance > 0.0:
-            raise GeometryError(f"tolerance must be positive, got {tolerance!r}")
+        if not tolerance >= const.EPSILON:
+            raise GeometryError(f"tolerance must be at least EPSILON ({const.EPSILON!r}), got {tolerance!r}")
         if max_depth < 0:
             raise GeometryError(f"max_depth must be at least 0, got {max_depth!r}")
         if self.is_degenerate:
             return []
-        if self._is_straight(line_flatness):
+        if self.is_straight:
             return [self.chord]
         segments: list[Line | Arc] = []
+        exhausted: list[bool] = []
         for piece in self.subdivide_inflections():
-            piece._biarcs(tolerance, max_depth, line_flatness, 0, segments)  # noqa: SLF001
+            piece._biarcs(tolerance, max_depth, 0, segments, exhausted)
+        if strict and exhausted:
+            raise ApproximationError(
+                f"biarc approximation could not reach tolerance {tolerance!r} within max_depth={max_depth!r}"
+            )
         if max_arc_angle is not None:
             split: list[Line | Arc] = []
             for seg in segments:
@@ -382,36 +394,37 @@ class CubicBezier:
         return [seg for seg in segments if not seg.is_degenerate]
 
     def _biarcs(
-        self, tolerance: float, max_depth: int, line_flatness: float | None, depth: int, out: list[Line | Arc]
+        self, tolerance: float, max_depth: int, depth: int, out: list[Line | Arc], exhausted: list[bool]
     ) -> None:
         if self.is_degenerate:
             return
-        if self._is_straight(line_flatness):
+        if self.is_straight:
             out.append(self.chord)
             return
         biarc = self._biarc()
-        if biarc is not None and (depth >= max_depth or self._within_tolerance(biarc, tolerance)):
+        if biarc is not None and self._within_tolerance(biarc, tolerance):
             out.extend(biarc)
             return
         if depth >= max_depth:
-            # Exhausted: the joint arc could not be formed; the chord is the documented fallback.
-            out.append(self.chord)
+            # Depth exhausted: return the best effort and record that tolerance was not met.
+            exhausted.append(True)
+            out.extend(biarc if biarc is not None else [self.chord])
             return
         head, tail = self.subdivide(0.5)
-        head._biarcs(tolerance, max_depth, line_flatness, depth + 1, out)  # noqa: SLF001
-        tail._biarcs(tolerance, max_depth, line_flatness, depth + 1, out)  # noqa: SLF001
+        head._biarcs(tolerance, max_depth, depth + 1, out, exhausted)
+        tail._biarcs(tolerance, max_depth, depth + 1, out, exhausted)
 
-    def _is_straight(self, line_flatness: float | None) -> bool:
+    @property
+    def is_straight(self) -> bool:
+        """True if the curve is a straight segment: control points within ``EPSILON`` of the chord and both end tangents along it.
+
+        Such a curve can be replaced by its chord without changing any tangent.
+        """
         chord = self.chord
-        if chord.is_degenerate:
+        if chord.is_degenerate or self.flatness > const.EPSILON:
             return False
-        if line_flatness is None:
-            line_flatness = const.EPSILON * max(1.0, chord.length)
-        if self.flatness > line_flatness:
-            return False
-        # The control points must also lie *between* the endpoints, so the
-        # tangents point along the chord and the segment keeps G1.
-        return 0.0 <= chord.mu(self.c1) <= 1.0 and 0.0 <= chord.mu(self.c2) <= 1.0
+        direction = chord.angle
+        return const.angle_eq(self.start_tangent_angle, direction) and const.angle_eq(self.end_tangent_angle, direction)
 
     def _biarc(self) -> list[Line | Arc] | None:
         """The equal-tangent biarc for an inflection-free piece, or None if it cannot be formed."""
@@ -436,7 +449,13 @@ class CubicBezier:
         return [first, second]
 
     def _joint_point(self) -> P | None:
-        """The biarc joint: where the curve's midpoint ray meets the joint circle through p1 and p2."""
+        """The biarc joint: where the curve's midpoint ray meets the joint circle through p1 and p2.
+
+        Every point of that circle gives two arcs that meet with a common
+        tangent, so the joint is never approximated by a point off the
+        circle; if the construction fails, None is returned and the caller
+        subdivides.
+        """
         chord = self.chord
         if chord.is_degenerate:
             return None
@@ -445,44 +464,92 @@ class CubicBezier:
         mid = chord.midpoint
         bisector1 = Line(mid, mid + chord.vector.normal())
         u_seg = Line(self.p1 + t_start, self.p2 + t_end)
-        p_mid = self.point_at(0.5)
         if u_seg.is_degenerate:
-            return p_mid
+            return None
         u_mid = u_seg.midpoint
         bisector2 = Line(u_mid, u_mid + u_seg.vector.normal())
+        p_mid = self.point_at(0.5)
         center = bisector1.intersection(bisector2)
         if center is None:
-            # Symmetric piece: the joint circle degenerates to the chord's bisector.
+            # Symmetric piece: the joint circle degenerates to the chord's bisector, which the
+            # curve midpoint lies on; both arcs meet there tangentially.
             return p_mid
         radius = center.distance(self.p1)
         v = p_mid - center
-        if v.is_zero or radius < const.EPSILON:
-            return p_mid
+        if v.length == 0.0:
+            return None
         return center + v.unit * radius
 
-    def _within_tolerance(self, segments: list[Line | Arc], tolerance: float, samples: int = 8) -> bool:
-        """Two-sided check: the curve stays within ``tolerance`` of each piece over its parameter range."""
-        n = len(segments)
-        for i, seg in enumerate(segments):
-            t_lo = i / n
-            t_hi = (i + 1) / n
-            for k in range(samples + 1):
-                p = self.point_at(t_lo + (t_hi - t_lo) * k / samples)
-                if seg.distance_to_point(p, segment=True) > tolerance:
+    def _within_tolerance(self, segments: list[Line | Arc], tolerance: float) -> bool:
+        """Sampled two-sided check between the curve and its approximating segments.
+
+        Curve samples must be within ``tolerance`` of the nearest segment and
+        segment samples within ``tolerance`` of the curve. Peaks between
+        samples can exceed ``tolerance`` slightly; callers that need a
+        measurement use :meth:`hausdorff_distance`.
+        """
+        samples = self._sample_polyline(16)
+        for p in samples:
+            if min(seg.distance_to_point(p, segment=True) for seg in segments) > tolerance:
+                return False
+        for seg in segments:
+            # Endpoints included: the biarc joint is not on the curve, so its deviation counts.
+            for k in range(7):
+                if self._distance_to_curve(seg.point_at(k / 6), samples) > tolerance:
                     return False
         return True
 
-    def hausdorff_distance(self, segment: Line | Arc, *, t1: float = 0.0, t2: float = 1.0, samples: int = 64) -> float:
-        """Largest distance from sampled curve points in ``[t1, t2]`` to ``segment`` (two-sided radial for arcs)."""
+    def _sample_polyline(self, n: int) -> list[P]:
+        return [self.point_at(k / n) for k in range(n + 1)]
+
+    def _distance_to_curve(self, p: P, samples: list[P]) -> float:
+        """Distance from ``p`` to the curve.
+
+        Every local minimum of the sampled distance is refined by a ternary
+        search on the parameter, so a curve that passes near itself (a loop)
+        does not hide the true nearest branch behind a closer sample on the
+        other branch.
+        """
+        n = len(samples) - 1
+        dist2 = [s.distance2(p) for s in samples]
+        best = math.inf
+        for i in range(n + 1):
+            if (i > 0 and dist2[i - 1] < dist2[i]) or (i < n and dist2[i + 1] < dist2[i]):
+                continue
+            best = min(best, dist2[i])  # keep the exact sampled candidate (endpoints are often exact)
+            lo = max(0, i - 1) / n
+            hi = min(n, i + 1) / n
+            for _ in range(48):
+                m1 = lo + (hi - lo) / 3.0
+                m2 = hi - (hi - lo) / 3.0
+                if self.point_at(m1).distance2(p) <= self.point_at(m2).distance2(p):
+                    hi = m2
+                else:
+                    lo = m1
+            best = min(best, self.point_at((lo + hi) / 2.0).distance2(p))
+        return math.sqrt(best)
+
+    def hausdorff_distance(self, segments: list[Line | Arc], *, samples: int = 64) -> float:
+        """Two-sided Hausdorff distance between this curve and its approximating segments.
+
+        Curve samples are measured to the nearest segment, and segment samples
+        to the curve (nearest sample refined by a parameter search); the larger
+        of the two maxima is returned. ``samples`` sets the curve sampling
+        density; each segment is sampled at a quarter of it (at least 8 points).
+        """
+        curve_samples = self._sample_polyline(samples)
         worst = 0.0
-        for k in range(samples + 1):
-            p = self.point_at(t1 + (t2 - t1) * k / samples)
-            worst = max(worst, segment.distance_to_point(p, segment=True))
+        for p in curve_samples:
+            worst = max(worst, min(seg.distance_to_point(p, segment=True) for seg in segments))
+        per_segment = max(8, samples // 4)
+        for seg in segments:
+            for k in range(per_segment + 1):
+                worst = max(worst, self._distance_to_curve(seg.point_at(k / per_segment), curve_samples))
         return worst
 
     # ----- transformations and output ------------------------------------------
 
-    def reversed(self) -> "CubicBezier":
+    def reversed(self) -> CubicBezier:
         """The same curve travelled the other way: ``p2 -> c2 -> c1 -> p1``."""
         return CubicBezier(self.p2, self.c2, self.c1, self.p1)
 
@@ -494,9 +561,7 @@ class CubicBezier:
         prefix = "C " if add_prefix or add_move else ""
         if add_move:
             prefix = f"M {fmt(self.p1.x)},{fmt(self.p1.y)} {prefix}"
-        return (
-            f"{prefix}{fmt(self.c1.x)},{fmt(self.c1.y)} {fmt(self.c2.x)},{fmt(self.c2.y)} {fmt(self.p2.x)},{fmt(self.p2.y)}"
-        )
+        return f"{prefix}{fmt(self.c1.x)},{fmt(self.c1.y)} {fmt(self.c2.x)},{fmt(self.c2.y)} {fmt(self.p2.x)},{fmt(self.p2.y)}"
 
     def __str__(self) -> str:
         return f"CubicBezier({self.p1}, {self.c1}, {self.c2}, {self.p2})"

@@ -4,13 +4,13 @@ import copy
 import dataclasses
 import math
 import pickle
-from typing import Any
 
 import pytest
 
 from geom2d import GeometryError, P, angle_eq, const
 from geom2d.box import Box
 from geom2d.line import Line
+from tests.helpers import XY
 
 H = Line(P(0, 0), P(10, 0))  # along +x
 
@@ -18,13 +18,9 @@ H = Line(P(0, 0), P(10, 0))  # along +x
 # ----- construction and dataclass behaviour ---------------------------------
 
 
-def test_construction_coerces_point_like():
-    raw: Any = (0, 0)
-    raw2: Any = (3, 4)
-    ln = Line(raw, raw2)  # untyped point-like input is coerced at runtime
-    assert ln.p1 == P(0, 0)
-    assert type(ln.p2) is P
+def test_from_polar_accepts_point_like_start():
     assert Line.from_polar((1, 1), 2.0, math.pi / 2).p2.almost_equal(P(1, 3))
+    assert Line.from_polar(XY(1, 1), 1.0, 0.0).p2 == P(2, 1)
 
 
 def test_equality_is_directional_and_hash_consistent():
@@ -35,7 +31,7 @@ def test_equality_is_directional_and_hash_consistent():
     assert hash(a) == hash(Line(P(0, 0), P(1 + 1e-10, 1)))
     assert a.reversed() == b
     assert a.reversed().reversed() == a
-    # D.1: xor-hash collapsed axis-aligned families onto one bucket.
+    # Hashes of axis-aligned segments must not collapse onto a few buckets.
     assert len({hash(Line(P(i, 0), P(i, 1))) for i in range(200)}) > 190
 
 
@@ -128,7 +124,7 @@ def test_extend_shift_offset():
         ln.extend(-11)
     assert ln.shift(3) == Line(P(3, 0), P(13, 0))
     assert ln.shift(-3) == Line(P(-3, 0), P(7, 0))
-    # C.6: positive offset is to the left of travel.
+    # Positive offset is to the left of travel.
     assert ln.offset(2) == Line(P(0, 2), P(10, 2))
     assert ln.offset(-2) == Line(P(0, -2), P(10, -2))
     assert ln.reversed().offset(2) == Line(P(10, -2), P(0, -2))
@@ -149,7 +145,7 @@ def test_which_side_and_same_side():
 
 
 def test_point_on_line_is_scale_independent():
-    # A1.8: absolute EPSILON on a cross product.
+    # Collinearity is a perpendicular distance, independent of the segment's length.
     big = Line(P(0, 0), P(1e6, 0))
     assert big.point_on_line(P(5e5, 1e-9))
     assert not big.point_on_line(P(5e5, 1e-6))
@@ -168,7 +164,7 @@ def test_is_parallel():
     assert not H.is_parallel(Line(P(0, 5), P(3, 6)))
     assert H.is_parallel(Line(P(20, 0), P(30, 0)), inline=True)
     assert not H.is_parallel(Line(P(0, 5), P(3, 5)), inline=True)
-    # A1.8: two perpendicular 1e-5 segments were "parallel".
+    # Tiny perpendicular segments are not parallel.
     s = 1e-5
     assert not Line(P(0, 0), P(s, 0)).is_parallel(Line(P(s / 2, -s), P(s / 2, s)))
 
@@ -184,15 +180,13 @@ def test_intersection_basic():
     far = Line(P(50, -5), P(50, 5))
     assert H.intersection(far) == P(50, 0)  # infinite lines
     assert H.intersection(far, segment=True) is None
-    assert H.intersection(far, seg_b=True) == P(50, 0)
-    assert H.intersection(far, seg_a=True) is None
     assert H.intersects(far)
     assert not H.intersects(far, segment=True)
     assert H.intersects(v, segment=True)
 
 
 def test_intersection_tiny_perpendicular_segments():
-    # A1.8: denominators below EPSILON were treated as parallel.
+    # Tiny segments intersect like any others.
     s = 1e-5
     h = Line(P(0, 0), P(s, 0))
     v = Line(P(s / 2, -s), P(s / 2, s))
@@ -201,7 +195,7 @@ def test_intersection_tiny_perpendicular_segments():
 
 
 def test_intersection_parallel_and_collinear():
-    # A1.9: coincident/overlapping segments reported no intersection.
+    # Collinear overlapping segments intersect.
     assert H.intersection(Line(P(0, 1), P(10, 1))) is None
     assert not H.intersects(Line(P(0, 1), P(10, 1)))
     assert H.intersects(H)
@@ -212,6 +206,7 @@ def test_intersection_parallel_and_collinear():
     assert H.intersection_mu(overlap) == 0.0
     disjoint = Line(P(20, 0), P(30, 0))
     assert H.intersects(disjoint)
+    assert H.intersection(disjoint) == P(0, 0)  # infinite collinear lines meet everywhere; p1 is reported
     assert not H.intersects(disjoint, segment=True)
     assert H.intersection(disjoint, segment=True) is None
 
@@ -226,7 +221,7 @@ def test_segment_bounds_are_distance_tolerant():
 
 
 def test_crosses_is_strict_and_symmetric():
-    # A1.3: crosses() checked only mu_a strictly.
+    # A crossing is strictly interior to both segments.
     a = Line(P(0, 0), P(10, 0))
     t_junction = Line(P(5, 0), P(5, 5))
     assert not a.crosses(t_junction)

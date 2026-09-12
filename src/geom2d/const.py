@@ -28,6 +28,17 @@ Identity versus coincidence:
     ``P.__eq__`` and ``hash(P)`` use grid cells (:func:`cell`) and agree with
     each other, which makes points usable in sets and dicts. Use
     ``P.almost_equal`` when you mean "geometrically the same point".
+
+Lifetime of ``EPSILON``:
+    Hashes and grid equality depend on the current ``EPSILON``. Call
+    :func:`set_epsilon` once, at startup, before any geometry object is
+    created or stored in a set or dict; objects hashed under a different
+    ``EPSILON`` are not comparable with ones hashed afterwards.
+
+Coordinate envelope:
+    Tolerances are absolute distances, so coordinates must be small enough
+    for a double to resolve ``EPSILON``: roughly ``|x| < 1e7`` at the default
+    ``1e-8``. Beyond that, constructions cannot satisfy their own invariants.
 """
 
 import math
@@ -66,6 +77,11 @@ def set_epsilon(value: float) -> float:
 
     Args:
         value: The new tolerance. Must satisfy ``0 < value < 1``.
+
+    Call this once at startup, before creating geometry: it changes the
+    grid used by ``__eq__`` and ``__hash__`` on every geometry class, so
+    objects already stored in sets or dicts stop matching (see the module
+    docstring).
 
     Returns:
         The previous tolerance, so it can be restored.

@@ -21,17 +21,12 @@ class Line:
     ``offset`` return the segment unchanged.
 
     ``offset(+d)`` moves the segment to the *left* of its direction of
-    travel; this convention is shared with ``Arc``.
+    travel; this convention is shared with ``Arc``. The constructor takes
+    ``P`` endpoints; :meth:`from_polar` accepts any point-like start.
     """
 
     p1: P
     p2: P
-
-    def __post_init__(self) -> None:
-        if type(self.p1) is not P:
-            object.__setattr__(self, "p1", P.of(self.p1))
-        if type(self.p2) is not P:
-            object.__setattr__(self, "p2", P.of(self.p2))
 
     # ----- construction -------------------------------------------------
 
@@ -78,12 +73,12 @@ class Line:
     @property
     def start_tangent(self) -> P:
         """Unit tangent at ``p1``; the zero vector if degenerate."""
-        return self.vector.unit
+        return P(0.0, 0.0) if self.is_degenerate else self.vector.unit
 
     @property
     def end_tangent(self) -> P:
         """Unit tangent at ``p2``; the zero vector if degenerate."""
-        return self.vector.unit
+        return P(0.0, 0.0) if self.is_degenerate else self.vector.unit
 
     @property
     def midpoint(self) -> P:
@@ -104,18 +99,15 @@ class Line:
         return P(self.p1.x + (self.p2.x - self.p1.x) * t, self.p1.y + (self.p2.y - self.p1.y) * t)
 
     def tangent_at(self, t: float) -> P:  # noqa: ARG002 - a line's tangent is constant
-        """Unit tangent at parameter ``t`` (constant along a line)."""
-        return self.vector.unit
+        """Unit tangent at parameter ``t`` (constant along a line); the zero vector if degenerate."""
+        return self.start_tangent
 
     def mu(self, p: P) -> float:
-        """Parameter of ``p``'s projection onto the line (``0`` at ``p1``, ``1`` at ``p2``).
+        """Parameter of the perpendicular projection of ``p`` onto the infinite line.
 
-        Signed: points behind ``p1`` give negative values. ``0.0`` if degenerate.
+        ``0`` at ``p1``, ``1`` at ``p2``; signed, so points behind ``p1`` give
+        negative values. ``0.0`` if degenerate.
         """
-        return self.normal_projection(p)
-
-    def normal_projection(self, p: P) -> float:
-        """Parameter of the perpendicular projection of ``p`` onto the infinite line."""
         dx = self.p2.x - self.p1.x
         dy = self.p2.y - self.p1.y
         len2 = dx * dx + dy * dy
@@ -128,14 +120,14 @@ class Line:
 
         With ``segment=True`` the result is clamped to the segment.
         """
-        t = self.normal_projection(p)
+        t = self.mu(p)
         if segment:
             t = min(1.0, max(0.0, t))
         return self.point_at(t)
 
     def distance_to_point(self, p: P, *, segment: bool = False) -> float:
         """Distance from ``p`` to the infinite line, or to the segment with ``segment=True``."""
-        t = self.normal_projection(p)
+        t = self.mu(p)
         if segment:
             t = min(1.0, max(0.0, t))
         qx = self.p1.x + (self.p2.x - self.p1.x) * t
@@ -232,7 +224,7 @@ class Line:
         if not segment:
             return True
         tol = const.EPSILON / length
-        return -tol <= self.normal_projection(p) <= 1.0 + tol
+        return -tol <= self.mu(p) <= 1.0 + tol
 
     def is_parallel(self, other: Line, *, inline: bool = False) -> bool:
         """True if the two segments are parallel (within ``EPSILON``); with ``inline`` also collinear.
@@ -250,13 +242,13 @@ class Line:
             return True
         return const.cross_is_zero(v1.cross(other.p1 - self.p1), len1)
 
-    def _intersection_params(self, other: Line, *, seg_a: bool, seg_b: bool) -> tuple[float, float] | None:
+    def _intersection_params(self, other: Line, *, segment: bool) -> tuple[float, float] | None:
         """Parameters ``(mu_a, mu_b)`` of the intersection, or None.
 
         Parallel, non-collinear lines have no intersection. Collinear lines
-        intersect everywhere; the reported point is the start of the overlap
-        (``mu_a = 0`` when neither segment flag is set), and None if the
-        requested segments do not overlap.
+        intersect everywhere: the reported point is ``p1`` for infinite lines
+        and the start of the overlap for segments, or None if the segments
+        do not overlap.
         """
         len_a = self.length
         len_b = other.length
@@ -268,60 +260,48 @@ class Line:
         if const.is_parallel(denom, len_a, len_b):
             if not const.cross_is_zero(va.cross(other.p1 - self.p1), len_a):
                 return None
-            return self._collinear_overlap(other, seg_a=seg_a, seg_b=seg_b)
+            return self._collinear_overlap(other, segment=segment)
         w = other.p1 - self.p1
         mu_a = w.cross(vb) / denom
         mu_b = w.cross(va) / denom
-        if seg_a:
-            tol = const.EPSILON / len_a
-            if mu_a < -tol or mu_a > 1.0 + tol:
-                return None
-        if seg_b:
-            tol = const.EPSILON / len_b
-            if mu_b < -tol or mu_b > 1.0 + tol:
+        if segment:
+            tol_a = const.EPSILON / len_a
+            tol_b = const.EPSILON / len_b
+            if mu_a < -tol_a or mu_a > 1.0 + tol_a or mu_b < -tol_b or mu_b > 1.0 + tol_b:
                 return None
         return (mu_a, mu_b)
 
-    def _collinear_overlap(self, other: Line, *, seg_a: bool, seg_b: bool) -> tuple[float, float] | None:
-        t1 = self.normal_projection(other.p1)
-        t2 = self.normal_projection(other.p2)
-        lo = min(t1, t2)
-        hi = max(t1, t2)
-        start = 0.0
-        if seg_b:
-            start = lo
-        if seg_a:
-            tol = const.EPSILON / self.length
-            if hi < -tol or lo > 1.0 + tol:
-                return None
-            start = max(start, 0.0)
-        if seg_b and not seg_a:
-            start = lo
-        mu_a = start
-        mu_b = other.normal_projection(self.point_at(mu_a))
-        return (mu_a, mu_b)
+    def _collinear_overlap(self, other: Line, *, segment: bool) -> tuple[float, float] | None:
+        if not segment:
+            return (0.0, other.mu(self.p1))
+        t1 = self.mu(other.p1)
+        t2 = self.mu(other.p2)
+        lo, hi = min(t1, t2), max(t1, t2)
+        tol = const.EPSILON / self.length
+        if hi < -tol or lo > 1.0 + tol:
+            return None
+        mu_a = max(lo, 0.0)
+        return (mu_a, other.mu(self.point_at(mu_a)))
 
-    def intersection_mu(
-        self, other: Line, *, segment: bool = False, seg_a: bool = False, seg_b: bool = False
-    ) -> float | None:
+    def intersection_mu(self, other: Line, *, segment: bool = False) -> float | None:
         """Parameter along this line of the intersection with ``other``, or None.
 
-        ``segment=True`` requires the intersection to lie on both segments;
-        ``seg_a`` / ``seg_b`` constrain each individually. Segment bounds are
-        tested within ``EPSILON`` as a distance. Collinear overlapping lines
-        report the start of the overlap.
+        By default the two infinite lines are intersected; ``segment=True``
+        requires the point to lie on both segments, tested within ``EPSILON``
+        as a distance. Collinear overlapping lines report the start of the
+        overlap.
         """
-        params = self._intersection_params(other, seg_a=segment or seg_a, seg_b=segment or seg_b)
+        params = self._intersection_params(other, segment=segment)
         return None if params is None else params[0]
 
-    def intersection(self, other: Line, *, segment: bool = False, seg_a: bool = False, seg_b: bool = False) -> P | None:
+    def intersection(self, other: Line, *, segment: bool = False) -> P | None:
         """The intersection point with ``other``, or None (see :meth:`intersection_mu`)."""
-        mu = self.intersection_mu(other, segment=segment, seg_a=seg_a, seg_b=seg_b)
+        mu = self.intersection_mu(other, segment=segment)
         return None if mu is None else self.point_at(mu)
 
     def intersects(self, other: Line, *, segment: bool = False) -> bool:
         """True if the lines (or, with ``segment=True``, the segments) intersect or overlap."""
-        return self._intersection_params(other, seg_a=segment, seg_b=segment) is not None
+        return self._intersection_params(other, segment=segment) is not None
 
     def crosses(self, other: Line) -> bool:
         """True if the segments cross at a point strictly interior to both.

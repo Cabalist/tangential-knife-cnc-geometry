@@ -22,7 +22,7 @@ def test_derived_constants_follow_epsilon(restore_epsilon):
 
 @pytest.mark.parametrize("bad", [0, -1e-8, 1.0, 2.0, math.inf, math.nan])
 def test_set_epsilon_rejects_bad_values_without_mutating(bad):
-    # D.4: the old implementation assigned EPSILON before validating.
+    # Validation happens before any constant changes.
     before = (const.EPSILON, const.EPSILON2, const.EPSILON_PRECISION, const.REPSILON)
     with pytest.raises(ValueError, match="epsilon"):
         const.set_epsilon(bad)
@@ -53,7 +53,7 @@ def test_float_eq_explicit_tolerance():
 
 
 def test_angle_eq_at_the_pi_seam():
-    # A1.1: leftward tangents come out as +pi and -pi.
+    # Leftward directions come out as +pi or -pi depending on rounding.
     assert const.angle_eq(math.pi, -math.pi)
     assert const.angle_eq(math.pi - 1e-12, -math.pi + 1e-12)
     assert const.angle_eq(0.5, 0.5 + 1e-9)

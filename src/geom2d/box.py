@@ -25,7 +25,8 @@ class Box:
     """An axis-aligned rectangle given by its minimum and maximum corners.
 
     The corners are canonicalised on construction, so ``Box(a, b)`` and
-    ``Box(b, a)`` are the same box. A box may be degenerate (zero width or
+    ``Box(b, a)`` are the same box. The constructor takes ``P`` corners;
+    :meth:`from_points` accepts any point-like input. A box may be degenerate (zero width or
     height); that is how a single point or an axis-aligned segment bounds.
     """
 
@@ -35,8 +36,8 @@ class Box:
     """Maximum corner (highest x and y)."""
 
     def __post_init__(self) -> None:
-        a = P.of(self.p1)
-        b = P.of(self.p2)
+        a = self.p1
+        b = self.p2
         object.__setattr__(self, "p1", P(min(a.x, b.x), min(a.y, b.y)))
         object.__setattr__(self, "p2", P(max(a.x, b.x), max(a.y, b.y)))
 

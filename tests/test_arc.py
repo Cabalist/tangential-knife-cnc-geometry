@@ -9,10 +9,11 @@ import random
 
 import pytest
 
-from geom2d import DegenerateGeometryError, GeometryError, P, angle_eq, const, float_eq
+from geom2d import DegenerateGeometryError, GeometryError, P, angle_eq, const, float_eq, normalize_angle
 from geom2d.arc import Arc, calc_center, intersect_circles
 from geom2d.box import Box
 from geom2d.line import Line
+from tests.helpers import XY
 
 PI = math.pi
 ORIGIN = P(0, 0)
@@ -54,6 +55,56 @@ def test_direct_construction_with_center():
     assert Arc(P(2, 1), P(1, 2), 1.0, PI / 2, P(1, 1)).center == P(1, 1)
 
 
+def test_factories_accept_foreign_points():
+    assert Arc.from_sweep(XY(1, 0), (0, 1), 1.0, PI / 2) == CCW_Q
+    assert Arc.from_two_points_and_tangent(XY(1, 1), (3, 1), XY(0, 0)) is not None
+
+
+def test_invariant_uses_absolute_epsilon():
+    bad = P(0, 1 + 1e-6)
+    with pytest.raises(GeometryError):
+        Arc(P(1, 0), bad, 1.0, PI / 2, ORIGIN)
+    shift = P(1000, 1000)
+    with pytest.raises(GeometryError):  # the same error after translation is still an error
+        Arc(P(1, 0) + shift, bad + shift, 1.0, PI / 2, shift)
+    with pytest.raises(GeometryError):  # a 1e-3 radial discrepancy at radius 1e6 is not within EPSILON
+        Arc(P(1e6, 0), P(0, 1e6), 1e6 + 1e-3, PI / 2, ORIGIN)
+    assert Arc(P(1e6, 0), P(0, 1e6), 1e6, PI / 2, ORIGIN).radius == 1e6
+
+
+def test_arcs_near_half_turn_construct():
+    for a in (PI - 1e-4, PI - 1e-6, PI - 1e-7, PI, PI + 1e-7, PI + 1e-4, -(PI - 1e-5), -PI):
+        arc = Arc.from_sweep(P(1, 0), P.from_polar(1, a), 1.0, a)
+        assert arc.center.almost_equal(ORIGIN)
+        assert arc.mu(arc.point_at(0.5)) == pytest.approx(0.5, abs=1e-9)
+    # Rotated exact semicircles and near-semicircles at ordinary radii, where sqrt(ratio**2 - 1) cancels badly.
+    for start in (0.3, 1.1, 2.9, -2.0):
+        rotated = Arc.from_sweep(P.from_polar(1, start), P.from_polar(1, start + PI), 1.0, PI)
+        assert rotated.center.almost_equal(ORIGIN)
+    big = Arc.from_sweep(P(10, 0), P.from_polar(10, PI - 1e-7), 10.0, PI - 1e-7)
+    assert big.center.almost_equal(ORIGIN)
+    assert Arc.from_sweep(P(1, 0), P(-1, 0), 1.0, PI).center == ORIGIN
+    with pytest.raises(GeometryError):  # distinct endpoints cannot be joined by a zero sweep
+        Arc.from_sweep(P(1, 0), P(0, 1), 1.0, 0.0)
+
+
+def test_small_sweep_at_large_radius_is_valid():
+    arc = Arc(P(1e6, 0), P(1e6 * math.cos(1e-9), 1e6 * math.sin(1e-9)), 1e6, 1e-9, ORIGIN)
+    assert not arc.is_degenerate
+    assert arc.length == pytest.approx(1e-3)
+    assert arc.mu(arc.point_at(0.5)) == pytest.approx(0.5, abs=1e-6)
+
+
+def test_tiny_arc_tangents_agree_with_tangent_at():
+    r = 5e-9
+    semi = Arc(P(r, 0), P(-r, 0), r, PI, ORIGIN)  # length 1.57e-8: not degenerate
+    assert not semi.is_degenerate
+    assert semi.start_tangent.length == pytest.approx(1.0)
+    assert semi.start_tangent.almost_equal(semi.tangent_at(0.0))
+    assert semi.end_tangent.almost_equal(semi.tangent_at(1.0))
+    assert semi.start_tangent.almost_equal(P(0, 1))
+
+
 @pytest.mark.parametrize(
     ("p1", "p2", "radius", "angle", "center"),
     [
@@ -68,7 +119,7 @@ def test_direct_construction_with_center():
     ],
 )
 def test_invariant_rejects_inconsistent_arcs(p1, p2, radius, angle, center):
-    # Consumer P0 item 3 and the -ORIGIN policy: this must raise without debug mode or asserts.
+    # Inconsistent geometry must raise in every mode: no debug flag, no assert.
     with pytest.raises(GeometryError):
         Arc(p1, p2, radius, angle, center)
 
@@ -107,7 +158,7 @@ def test_zero_sweep_arc_is_degenerate_not_an_error():
 
 
 def test_from_two_points_and_tangent_uses_point_semantics():
-    # A2.16: the tangent argument is a point; translation must not change the result.
+    # The tangent argument is a point, not a vector; translating everything must not change the result.
     arc = Arc.from_two_points_and_tangent(P(1, 1), P(3, 1), P(0, 0))
     moved = Arc.from_two_points_and_tangent(P(6, 6), P(8, 6), P(5, 5))
     assert arc is not None
@@ -118,7 +169,7 @@ def test_from_two_points_and_tangent_uses_point_semantics():
     assert Arc.from_two_points_and_tangent(P(0, 0), P(1, 0), P(0, 0)) is None  # coincident endpoints
     assert Arc.from_two_points_and_tangent(P(0, 0), P(0, 0), P(1, 1)) is None  # coincident tangent point
     assert Arc.from_two_points_and_tangent(P(0, 0), P(1, 0), P(5, 0)) is None  # collinear: a line
-    # D.11: nearly coincident endpoints in different hash cells used to reach sin(0).
+    # Nearly coincident endpoints are degenerate even when they fall in different hash cells.
     assert Arc.from_two_points_and_tangent(P(0, 0), P(1, 0), P(6e-9, 0)) is None
     rev = Arc.from_two_points_and_tangent(P(1, 1), P(3, 1), P(0, 0), reverse=True)
     assert rev is not None
@@ -144,7 +195,7 @@ def test_direction_flags_length():
 
 
 def test_start_angle_with_offset_center():
-    # A2.11: start_angle measured from the absolute point (1, 0) instead of the center.
+    # start_angle is measured about the center, not from the absolute point (1, 0).
     arc = Arc(P(6, 5), P(5, 6), 1.0, PI / 2, P(5, 5))
     assert arc.start_angle == pytest.approx(0.0)
     assert arc.end_angle == pytest.approx(PI / 2)
@@ -162,12 +213,12 @@ def test_tangent_angles_and_vectors():
     # Reversal flips every tangent.
     for arc in FAMILIES:
         rev = arc.reversed()
-        assert angle_eq(rev.start_tangent_angle, arc.end_tangent_angle + PI)
+        assert angle_eq(rev.start_tangent_angle, normalize_angle(arc.end_tangent_angle + PI, 0.0))
         assert rev.start_tangent.almost_equal(-arc.end_tangent)
 
 
 def test_height_for_minor_and_major_arcs():
-    # A2.9: radius - |chord_mid - center| is wrong past a half turn.
+    # The sagitta must be right past a half turn as well.
     assert CCW_Q.height == pytest.approx(1.0 - math.cos(PI / 4))
     major = Arc.from_sweep(P(1, 0), P(0, 1), 1.0, 3 * PI / 2)
     brute = max(major.point_at(i / 2000).distance_to_line(major.p1, major.p2) for i in range(2001))
@@ -188,7 +239,7 @@ def test_bounding_box():
 
 
 def test_mu_and_point_at_round_trip_for_all_families():
-    # A2.5: mu used angle2 and wrapped for sweeps beyond half a turn.
+    # mu must not wrap for sweeps beyond half a turn.
     for arc in FAMILIES:
         for t in (0.0, 0.1, 0.5, 0.7, 0.9, 1.0):
             assert arc.mu(arc.point_at(t)) == pytest.approx(t, abs=1e-9)
@@ -228,7 +279,7 @@ def test_subdivide_family():
 
 
 def test_subdivide_equal_and_split_max_sweep():
-    # Consumer P0 item 1: equal sweeps, each within the limit.
+    # Equal sweeps, each within the limit.
     big = Arc.from_sweep(P(1, 0), P.from_polar(1, math.radians(359)), 1.0, math.radians(359))
     parts = big.split_max_sweep(PI / 2)
     assert len(parts) == 4
@@ -256,7 +307,7 @@ def test_subdivide_equal_and_split_max_sweep():
 
 
 def test_reversed_is_a_different_arc():
-    # E.2: angle_eq on the signed sweep made the two semicircles on a chord equal.
+    # The signed sweep is part of an arc's identity: the two semicircles on a chord differ.
     for arc in FAMILIES:
         rev = arc.reversed()
         assert rev != arc
@@ -269,7 +320,7 @@ def test_reversed_is_a_different_arc():
 
 
 def test_extend():
-    # E.9: the old implementation was a no-op for positive amounts.
+    # extend lengthens the arc along its circle by the given arc length.
     ext = CCW_Q.extend(PI / 2)
     assert float_eq(ext.angle, PI)
     assert ext.p1 == CCW_Q.p1
@@ -289,7 +340,7 @@ def test_extend():
 
 
 def test_offset_is_left_of_travel():
-    # C.6: Arc.offset was radial regardless of direction; Line.offset is left of travel.
+    # offset(+d) is to the left of travel, matching Line.offset.
     inner = CCW_Q.offset(0.1)
     assert float_eq(inner.radius, 0.9)
     assert inner.center == CCW_Q.center
@@ -311,8 +362,7 @@ def test_offset_is_left_of_travel():
 
 
 def test_point_on_arc_for_semicircles_and_major_arcs():
-    # A2.2: the chord-intersection test accepted every circle point for a semicircle
-    # and rejected the endpoints of a major arc.
+    # Sweep membership must be exact for semicircles and major arcs, endpoints included.
     semi = Arc.from_sweep(P(1, 0), P(-1, 0), 1.0, PI)
     assert semi.point_on_arc(P(0, 1))
     assert not semi.point_on_arc(P(0, -1))
@@ -327,7 +377,7 @@ def test_point_on_arc_for_semicircles_and_major_arcs():
 
 
 def test_point_inside_sector_matches_analytic_test():
-    # A2.3: the chained comparison reported the mirror-image sector.
+    # The sector lies on the swept side, for both directions.
     assert CCW_Q.point_inside(P(0.5, 0.5))
     assert not CCW_Q.point_inside(P(-0.5, 0.5))
     assert CW_Q.point_inside(P(0.5, 0.5))
@@ -344,7 +394,7 @@ def test_point_inside_sector_matches_analytic_test():
 
 
 def test_normal_projection_point_below_center():
-    # A2.8: root ordering returned the antipode for points below the center.
+    # Points below the center project radially, never to the antipode.
     circle = Arc.from_sweep(P(1, 0), P(-1, 0), 1.0, PI)
     assert circle.normal_projection_point(P(0, -2)).almost_equal(P(0, -1))
     assert circle.normal_projection_point(P(3, -4)).almost_equal(P(0.6, -0.8))
@@ -382,8 +432,7 @@ def test_intersect_line():
     assert len(up) == 1
     assert up[0].almost_equal(P(0, 1))
     assert circle.intersect_line(Line(P(1, 1), P(1, 1))) == []  # degenerate line
-    # A2.2: the major arc from (1,0) CCW to (0,1) is centred at (1,1); x=1 is a diameter
-    # meeting it at the endpoint p1 and at (1,2). The old chord test dropped the endpoint.
+    # The major arc from (1,0) CCW to (0,1) is centred at (1,1); x=1 is a diameter meeting it at p1 and (1,2).
     major = Arc.from_sweep(P(1, 0), P(0, 1), 1.0, 3 * PI / 2)
     assert major.center == P(1, 1)
     both = major.intersect_line(Line(P(1, -5), P(1, 5)), on_arc=True)
@@ -392,7 +441,7 @@ def test_intersect_line():
 
 
 def test_intersect_circles_and_arcs():
-    # A2.6: externally tangent circles returned the midpoint of the centers.
+    # Externally tangent circles meet r1 along the center line, not at the midpoint of the centers.
     assert intersect_circles(ORIGIN, 1.0, P(4, 0), 3.0) == (P(1, 0),)
     assert intersect_circles(ORIGIN, 3.0, P(4, 0), 1.0) == (P(3, 0),)
     assert intersect_circles(ORIGIN, 3.0, P(2, 0), 1.0) == (P(3, 0),)  # internally tangent, once

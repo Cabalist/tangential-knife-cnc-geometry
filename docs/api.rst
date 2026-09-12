@@ -7,21 +7,11 @@ geom2d
     :template: module.rst
     :toctree: generated
 
+    const
+    errors
+    point
+    line
     arc
     bezier
     box
-    const
-    debug
-    ellipse
-    fillet
-    line
-    planargraph
-    plotpath
-    point
-    polygon
-    polyline
-    transform2d
     util
-    voronoiclip
-    voronoi
-

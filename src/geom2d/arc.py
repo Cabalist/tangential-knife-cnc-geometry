@@ -17,6 +17,7 @@ from .point import P
 
 if TYPE_CHECKING:
     from .line import Line
+    from .point import PointLike
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -25,10 +26,13 @@ class Arc:
 
     Every constructor path validates the geometry: ``radius`` must be
     positive, ``|angle|`` at most a full turn, both endpoints must lie on
-    the circle of ``radius`` about ``center``, and sweeping ``p1`` by
-    ``angle`` about ``center`` must land on ``p2``. Inconsistent input
-    raises :class:`GeometryError`, so ``center - p1`` can be trusted as the
-    arc's I/J offset. :meth:`from_sweep` computes the center for you.
+    the circle of ``radius`` about ``center`` within ``EPSILON`` (an
+    absolute distance), and sweeping ``p1`` by ``angle`` about ``center``
+    must land within ``EPSILON`` of ``p2``. Inconsistent input raises
+    :class:`GeometryError`, so ``center - p1`` can be trusted as the arc's
+    I/J offset. :meth:`from_sweep` computes the center for you. The
+    dataclass constructor takes ``P`` fields; the factory classmethods accept
+    any :data:`~geom2d.point.PointLike`.
 
     Equality is grid identity on every field (see ``P``), so an arc and
     its ``reversed()`` differ. A zero-sweep arc is *degenerate*: its
@@ -43,12 +47,6 @@ class Arc:
     center: P
 
     def __post_init__(self) -> None:
-        if type(self.p1) is not P:
-            object.__setattr__(self, "p1", P.of(self.p1))
-        if type(self.p2) is not P:
-            object.__setattr__(self, "p2", P.of(self.p2))
-        if type(self.center) is not P:
-            object.__setattr__(self, "center", P.of(self.center))
         radius = float(self.radius)
         angle = float(self.angle)
         object.__setattr__(self, "radius", radius)
@@ -59,10 +57,10 @@ class Arc:
             raise GeometryError(f"arc sweep must be within one full turn, got {self.angle!r}")
         d1 = self.p1.distance(self.center)
         d2 = self.p2.distance(self.center)
-        if not (const.float_eq(d1, radius) and const.float_eq(d2, radius)):
+        if not (const.is_zero(d1 - radius) and const.is_zero(d2 - radius)):
             raise GeometryError(f"arc endpoints are not on the circle: |p1-c|={d1!r}, |p2-c|={d2!r}, radius={radius!r}")
         expected_p2 = self.center + (self.p1 - self.center).rotate(angle)
-        if not (const.float_eq(expected_p2.x, self.p2.x) and const.float_eq(expected_p2.y, self.p2.y)):
+        if not expected_p2.almost_equal(self.p2):
             raise GeometryError(
                 f"sweeping p1 by angle={angle!r} about the center gives {expected_p2}, not p2={self.p2}"
             )
@@ -70,7 +68,7 @@ class Arc:
     # ----- construction -------------------------------------------------
 
     @classmethod
-    def from_sweep(cls, p1: P, p2: P, radius: float, angle: float) -> Arc:
+    def from_sweep(cls, p1: PointLike, p2: PointLike, radius: float, angle: float) -> Arc:
         """Create an arc from its endpoints, radius and signed sweep; the center is computed.
 
         Raises:
@@ -79,10 +77,14 @@ class Arc:
             GeometryError: If the chord is longer than the diameter or the
                 inputs are otherwise inconsistent.
         """
-        return cls(p1, p2, radius, angle, calc_center(p1, p2, radius, angle))
+        a = P.of(p1)
+        b = P.of(p2)
+        return cls(a, b, radius, angle, calc_center(a, b, radius, angle))
 
     @classmethod
-    def from_two_points_and_tangent(cls, p1: P, tangent_point: P, p2: P, *, reverse: bool = False) -> Arc | None:
+    def from_two_points_and_tangent(
+        cls, p1: PointLike, tangent_point: PointLike, p2: PointLike, *, reverse: bool = False
+    ) -> Arc | None:
         """Create the arc through ``p1`` and ``p2`` whose tangent at ``p1`` points at ``tangent_point``.
 
         ``tangent_point`` is a point, not a vector: the tangent direction is
@@ -90,6 +92,9 @@ class Arc:
         (coincident points) or would be a straight line (collinear points).
         With ``reverse`` the arc runs from ``p2`` back to ``p1``.
         """
+        p1 = P.of(p1)
+        p2 = P.of(p2)
+        tangent_point = P.of(tangent_point)
         if p1.almost_equal(p2) or p1.almost_equal(tangent_point):
             return None
         angle = 2.0 * p1.angle2(tangent_point, p2)
@@ -103,17 +108,13 @@ class Arc:
 
     # ----- private angular helpers --------------------------------------
 
-    @property
-    def _start_angle(self) -> float:
-        return math.atan2(self.p1.y - self.center.y, self.p1.x - self.center.x)
-
     def _sweep_angle_to(self, p: P) -> float:
         """Unsigned angle swept from ``p1`` to the ray through ``p``, in ``[0, tau)``.
 
         Measured along the arc's direction of travel; a point just behind
         ``p1`` (within tolerance) reads as ``0.0`` rather than a full turn.
         """
-        theta = (math.atan2(p.y - self.center.y, p.x - self.center.x) - self._start_angle) * self.direction
+        theta = (math.atan2(p.y - self.center.y, p.x - self.center.x) - self.start_angle) * self.direction
         theta %= const.TAU
         if theta >= const.TAU - self._angle_tolerance:
             theta = 0.0
@@ -124,19 +125,12 @@ class Arc:
         """Angular tolerance equivalent to ``EPSILON`` as a distance along the circle."""
         return const.EPSILON / self.radius
 
-    def _sweep_param(self, p: P) -> float:
-        """Parameter of ``p``'s ray: 0 at ``p1``, 1 at ``p2``, above 1 beyond ``p2``."""
-        sweep = abs(self.angle)
-        if sweep < const.EPSILON:
-            return 0.0
-        return self._sweep_angle_to(p) / sweep
-
     def _in_sweep(self, p: P) -> bool:
         theta = self._sweep_angle_to(p)
         return theta <= abs(self.angle) + self._angle_tolerance
 
     def _angle_at(self, t: float) -> float:
-        return self._start_angle + self.angle * t
+        return self.start_angle + self.angle * t
 
     # ----- derived values -----------------------------------------------
 
@@ -168,7 +162,7 @@ class Arc:
     @property
     def start_angle(self) -> float:
         """Direction from the center to ``p1`` in radians, ``(-pi, pi]``."""
-        return self._start_angle
+        return math.atan2(self.p1.y - self.center.y, self.p1.x - self.center.x)
 
     @property
     def end_angle(self) -> float:
@@ -188,16 +182,12 @@ class Arc:
     @property
     def start_tangent(self) -> P:
         """Unit tangent at ``p1`` in the direction of travel; zero vector if degenerate."""
-        if self.is_degenerate:
-            return P(0.0, 0.0)
-        return (self.p1 - self.center).normal().unit * self.direction
+        return self.tangent_at(0.0)
 
     @property
     def end_tangent(self) -> P:
         """Unit tangent at ``p2`` in the direction of travel; zero vector if degenerate."""
-        if self.is_degenerate:
-            return P(0.0, 0.0)
-        return (self.p2 - self.center).normal().unit * self.direction
+        return self.tangent_at(1.0)
 
     @property
     def start_tangent_angle(self) -> float:
@@ -250,7 +240,7 @@ class Arc:
         """The point swept ``theta`` radians from ``p1`` along the direction of travel."""
         if self.is_degenerate:
             return self.p1
-        return self.center + P.from_polar(self.radius, self._start_angle + self.direction * theta)
+        return self.center + P.from_polar(self.radius, self.start_angle + self.direction * theta)
 
     def tangent_at(self, t: float) -> P:
         """Unit tangent in the direction of travel at parameter ``t``; zero vector if degenerate."""
@@ -265,7 +255,9 @@ class Arc:
         circle). Correct for any sweep, including more than half a turn.
         ``0.0`` if degenerate.
         """
-        return self._sweep_param(p)
+        if self.is_degenerate:
+            return 0.0
+        return self._sweep_angle_to(p) / abs(self.angle)
 
     def subdivide(self, t: float) -> tuple[Arc, Arc]:
         """Split at parameter ``t`` into two arcs sharing the center.
@@ -288,7 +280,7 @@ class Arc:
             GeometryError: If ``theta`` is outside ``[0, |angle|]``.
         """
         sweep = abs(self.angle)
-        if sweep < const.EPSILON:
+        if self.is_degenerate:
             raise GeometryError("cannot subdivide a degenerate arc by angle")
         if not 0.0 <= theta <= sweep:
             raise GeometryError(f"split angle must be in [0, {sweep!r}], got {theta!r}")
@@ -300,7 +292,7 @@ class Arc:
         Raises:
             GeometryError: If ``p``'s ray does not meet the arc.
         """
-        t = self._sweep_param(p)
+        t = self.mu(p)
         if t > 1.0 + self._angle_tolerance / max(abs(self.angle), const.EPSILON):
             raise GeometryError(f"point {p} is not within the arc's sweep")
         return self.subdivide(min(t, 1.0))
@@ -355,11 +347,11 @@ class Arc:
             raise GeometryError("cannot extend an arc beyond a full turn")
         new_angle = self.direction * sweep
         if from_midpoint:
-            start = self._start_angle - self.direction * (amount / (2.0 * self.radius))
+            start = self.start_angle - self.direction * (amount / (2.0 * self.radius))
             p1 = self.center + P.from_polar(self.radius, start)
             p2 = self.center + P.from_polar(self.radius, start + new_angle)
             return Arc(p1, p2, self.radius, new_angle, self.center)
-        p2 = self.center + P.from_polar(self.radius, self._start_angle + new_angle)
+        p2 = self.center + P.from_polar(self.radius, self.start_angle + new_angle)
         return Arc(self.p1, p2, self.radius, new_angle, self.center)
 
     def offset(self, distance: float) -> Arc:
@@ -501,25 +493,26 @@ class Arc:
 def calc_center(p1: P, p2: P, radius: float, angle: float) -> P:
     """Center of the arc through ``p1`` and ``p2`` with the given radius and signed sweep.
 
+    The center sits ``(chord / 2) * cot(angle / 2)`` to the left of the chord's
+    midpoint (negative values fall to the right), which is exact for a half
+    turn and stable near it. ``radius`` is only checked against the chord;
+    the ``Arc`` invariant verifies it against the result.
+
     Raises:
         DegenerateGeometryError: If ``p1`` and ``p2`` coincide.
-        GeometryError: If the chord is longer than the diameter.
+        GeometryError: If the sweep is zero or the chord is longer than the diameter.
     """
-    chord = p1.distance(p2)
+    chord_vector = p2 - p1
+    chord = chord_vector.length
     if chord < const.EPSILON:
         raise DegenerateGeometryError(f"cannot infer an arc center from coincident endpoints {p1}")
-    diameter = 2.0 * radius
-    if chord > diameter and not const.float_eq(chord, diameter):
-        raise GeometryError(f"chord {chord!r} is longer than the diameter {diameter!r}")
+    if const.is_zero(angle):
+        raise GeometryError(f"a zero sweep cannot join distinct endpoints {p1} and {p2}")
+    if chord > 2.0 * radius + const.EPSILON:
+        raise GeometryError(f"chord {chord!r} is longer than the diameter {2.0 * radius!r}")
     mid = P((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0)
-    if const.float_eq(chord, diameter):
-        return mid
-    ratio = diameter / chord
-    t = math.sqrt(max(0.0, ratio * ratio - 1.0))
-    sign = 1.0 if angle > 0 else -1.0
-    if abs(angle) > math.pi:
-        sign = -sign
-    return P(mid.x + sign * ((p1.y - p2.y) / 2.0) * t, mid.y - sign * ((p1.x - p2.x) / 2.0) * t)
+    offset = (chord / 2.0) / math.tan(angle / 2.0)
+    return mid + chord_vector.normal() * (offset / chord)
 
 
 def intersect_circles(c1: P, r1: float, c2: P, r2: float) -> tuple[P, ...]:
