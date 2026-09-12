@@ -6,8 +6,10 @@ Changelog
 =====
 
 A rebuild of the library as the geometry kernel for turning vector artwork
-into cutting toolpaths. The public API changed throughout; nothing from 0.x
-is kept for compatibility.
+into toolpaths for an oscillating tangential knife. The distribution is
+now named ``tangential-knife-cnc-geometry``; the import name stays
+``geom2d``. The public API changed throughout; nothing from 0.x is kept
+for compatibility.
 
 Scope
 -----

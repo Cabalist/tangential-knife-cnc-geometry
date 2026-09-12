@@ -1,8 +1,9 @@
-======
-geom2d
-======
+=============================
+tangential-knife-cnc-geometry
+=============================
 
-A 2D geometry kernel for turning vector artwork into cutting toolpaths:
+A 2D geometry kernel (import name ``geom2d``) for turning vector artwork
+into toolpaths for an oscillating tangential knife:
 points, line segments, circular arcs and cubic Bézier curves, the biarc
 approximation that turns curves into tangent-continuous arcs, and the path
 helpers a toolpath generator needs. Pure standard library, Python 3.14.

@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/utl-geom2d
+      url: https://pypi.org/p/tangential-knife-cnc-geometry
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
 
@@ -103,7 +103,7 @@ jobs:
 
     environment:
       name: testpypi
-      url: https://test.pypi.org/p/utl-geom2d
+      url: https://test.pypi.org/p/tangential-knife-cnc-geometry
 
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing

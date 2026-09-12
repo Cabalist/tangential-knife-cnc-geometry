@@ -3,16 +3,16 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "utl-geom2d"
+name = "tangential-knife-cnc-geometry"
 version = "1.0.0"
-description = "2D geometry kernel for turning SVG paths into cutting toolpaths: points, lines, circular arcs, cubic Béziers, biarcs, tangent continuity"
+description = "2D geometry kernel for turning SVG paths into toolpaths for an oscillating tangential knife: points, lines, circular arcs, cubic Béziers, biarcs, tangent continuity (import name geom2d)"
 readme = "README.rst"
 requires-python = ">=3.14"
 license = "LGPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "Ryan Jarvis", email = "ryan@technoloft.com" }]
 maintainers = [{ name = "Ryan Jarvis", email = "ryan@technoloft.com" }]
-keywords = ["2d", "geometry", "bezier", "biarc", "toolpath", "gcode"]
+keywords = ["2d", "geometry", "bezier", "biarc", "toolpath", "gcode", "cnc", "tangential-knife"]
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.14",
@@ -23,7 +23,7 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-repository = "https://github.com/Cabalist/utl-geom2d"
+repository = "https://github.com/Cabalist/tangential-knife-cnc-geometry"
 
 [dependency-groups]
 dev = [

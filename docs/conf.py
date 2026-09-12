@@ -1,6 +1,6 @@
 """Sphinx configuration for the geom2d documentation."""
 
-project = "geom2d"
+project = "tangential-knife-cnc-geometry"
 copyright = "2026, Ryan Jarvis"  # noqa: A001
 author = "Ryan Jarvis"
 
@@ -24,4 +24,4 @@ napoleon_google_docstring = True
 napoleon_numpy_docstring = False
 
 html_theme = "furo"
-html_title = "geom2d"
+html_title = "tangential-knife-cnc-geometry"

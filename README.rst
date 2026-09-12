@@ -1,9 +1,10 @@
-======
-geom2d
-======
+=============================
+tangential-knife-cnc-geometry
+=============================
 
-A small 2D geometry kernel for turning vector artwork into cutting toolpaths.
-It provides the primitives a toolpath generator needs and nothing else:
+A small 2D geometry kernel for turning vector artwork into toolpaths for an
+oscillating tangential knife; the import name is ``geom2d``. It provides the
+primitives a toolpath generator needs and nothing else:
 
 * ``P`` points and vectors, ``Line`` segments, circular ``Arc`` segments and
   ``CubicBezier`` curves, all immutable dataclasses with a validated geometry;
@@ -26,7 +27,7 @@ Install and use
 
 ::
 
-    uv add utl-geom2d
+    uv add tangential-knife-cnc-geometry
 
 ::
 
