@@ -11,7 +11,7 @@ def test_derived_constants_follow_epsilon(restore_epsilon):
     previous = const.set_epsilon(1e-6)
     assert previous == 1e-8
     assert const.EPSILON == 1e-6
-    assert const.EPSILON2 == pytest.approx(1e-12)
+    assert pytest.approx(1e-12) == const.EPSILON2
     assert const.EPSILON_PRECISION == 6
     assert const.REPSILON == 1e6
     const.set_epsilon(1e-9)
@@ -26,7 +26,7 @@ def test_set_epsilon_rejects_bad_values_without_mutating(bad):
     before = (const.EPSILON, const.EPSILON2, const.EPSILON_PRECISION, const.REPSILON)
     with pytest.raises(ValueError, match="epsilon"):
         const.set_epsilon(bad)
-    assert (const.EPSILON, const.EPSILON2, const.EPSILON_PRECISION, const.REPSILON) == before
+    assert before == (const.EPSILON, const.EPSILON2, const.EPSILON_PRECISION, const.REPSILON)
     assert const.float_eq(1.0, 1.0)
 
 
@@ -88,4 +88,4 @@ def test_float_round_and_cell():
     assert const.cell(1.0) == 100_000_000
     assert const.cell(1.0 + 0.4e-8) == const.cell(1.0)
     assert const.cell(1.0 + 0.6e-8) == const.cell(1.0) + 1
-    assert const.TAU == math.tau
+    assert math.tau == const.TAU
