@@ -1,33 +1,21 @@
-"""2D geometry package."""
+"""2D geometry kernel for toolpath work: points, lines, circular arcs, cubic Béziers."""
 
-from .arc import Arc
-from .bezier import CubicBezier
-from .box import Box
-from .const import (
-    TAU,
-    float_eq,
-    float_round,
-    is_zero,
-    set_epsilon,
-)
-from .line import Line, TLine
-from .point import P, TPoint
-from .util import calc_rotation, normalize_angle, segments_are_g1
+from .const import TAU, angle_eq, float_eq, is_zero, set_epsilon
+from .errors import DegenerateGeometryError, GeometryError
+from .point import HasXY, P, PointLike
+from .util import calc_rotation, normalize_angle
 
 __all__ = [
     "TAU",
-    "Arc",
-    "Box",
-    "CubicBezier",
-    "Line",
+    "DegenerateGeometryError",
+    "GeometryError",
+    "HasXY",
     "P",
-    "TLine",
-    "TPoint",
+    "PointLike",
+    "angle_eq",
     "calc_rotation",
     "float_eq",
-    "float_round",
     "is_zero",
     "normalize_angle",
-    "segments_are_g1",
     "set_epsilon",
 ]

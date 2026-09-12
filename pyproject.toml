@@ -27,7 +27,6 @@ repository = "https://github.com/Cabalist/utl-geom2d"
 
 [dependency-groups]
 dev = [
-    "numpy",  # legacy tests only; removed when the kernel tests are rewritten
     "prek",
     "pyrefly",
     "pytest",

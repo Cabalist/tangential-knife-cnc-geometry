@@ -1,73 +1,33 @@
-"""Basic 2D utility functions."""
+"""Angle helpers and number formatting."""
 
-from __future__ import annotations
-
+import functools
 import math
 from typing import TYPE_CHECKING
 
-from . import const, point
+from . import const
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from .arc import Arc
-    from .bezier import CubicBezier
-    from .line import Line
-
-
-def float_formatter(scale: float = 1, precision: float | None = None) -> Callable[[float], str]:
-    """Get a float formatter for a specified precision.
-
-    Args:
-        scale: Scaling factor (for SVG). Default is 1.
-        precision: The max number of digits after the decimal point.
-
-    Returns:
-        A function that formats a float to the specified precision
-        and strips off trailing zeros and decimal point when necessary.
-    """
-    if precision is None:
-        # Assign here instead of kwarg because theoretically mutable
-        precision = const.EPSILON_PRECISION
-    fmt = f"{{:.{precision}f}}"
-    return lambda x: fmt.format(x * scale).rstrip("0").rstrip(".")
-
 
 def normalize_angle(angle: float, center: float = math.pi) -> float:
-    """Normalize ``angle`` about a 2*PI interval centered at ``center``.
+    """Normalize ``angle`` into a full turn centred on ``center``.
 
-    For angle between 0 and 2*PI (default):
-        normalize_angle(angle, center=math.pi)
-    For angle between -PI and PI:
-        normalize_angle(angle, center=0.0)
-
-    Args:
-        angle: Angle in radians to normalize
-        center: Center value about which to normalize.
-            Default is math.pi.
-
-    Returns:
-        An angle value in radians between 0 and 2 * PI if center == PI,
-        otherwise a value between -PI and PI if center == 0.
+    ``normalize_angle(a)`` maps into ``[0, 2*pi)``;
+    ``normalize_angle(a, center=0.0)`` maps into ``[-pi, pi)``.
     """
     return angle - (const.TAU * math.floor((angle + math.pi - center) / const.TAU))
 
 
 def calc_rotation(start_angle: float, end_angle: float) -> float:
-    """Calculate the amount of rotation between two angles.
+    """Return the shortest signed rotation from ``start_angle`` to ``end_angle``.
 
-    Args:
-        start_angle: Start angle in radians.
-        end_angle: End angle in radians.
-
-    Returns:
-        Rotation amount in radians where -PI <= rotation <= PI.
+    The result lies in ``[-pi, pi]``; positive is counter-clockwise.
+    Angles that are equal within ``EPSILON`` give ``0.0``.
     """
     if const.float_eq(start_angle, end_angle):
         return 0.0
-    start_angle = normalize_angle(start_angle, 0)
-    end_angle = normalize_angle(end_angle, 0)
-    rotation = end_angle - start_angle
+    rotation = normalize_angle(end_angle, 0.0) - normalize_angle(start_angle, 0.0)
     if rotation < -math.pi:
         rotation += const.TAU
     elif rotation > math.pi:
@@ -75,36 +35,29 @@ def calc_rotation(start_angle: float, end_angle: float) -> float:
     return rotation
 
 
-def segments_are_g1(
-    seg1: Line | Arc | CubicBezier,
-    seg2: Line | Arc | CubicBezier,
-    tolerance: float | None = None,
-) -> bool:
-    """Determine if two segments have G1 continuity.
+@functools.lru_cache(maxsize=32)
+def _formatter(scale: float, precision: int) -> Callable[[float], str]:
+    def fmt(value: float) -> str:
+        text = f"{value * scale:.{precision}f}"
+        if "." in text:
+            text = text.rstrip("0").rstrip(".")
+        return "0" if text in {"", "-0"} else text
 
-    G1 continuity is when two  segments are tangentially connected.
-    G1 implies G0 continuity.
+    return fmt
+
+
+def float_formatter(*, scale: float = 1.0, precision: int | None = None) -> Callable[[float], str]:
+    """Return a function that formats floats compactly at a fixed precision.
+
+    Trailing zeros and a trailing decimal point are removed, so ``1.50``
+    becomes ``"1.5"`` and ``100.0`` stays ``"100"``. Negative zero prints as
+    ``"0"``. Formatters are cached per ``(scale, precision)``.
 
     Args:
-        seg1: First segment. Can be geom.Line, geom2d.Arc, geom.CubicBezier.
-        seg2: Second segment. Can be geom.Line, geom2d.Arc, geom.CubicBezier.
-        tolerance: G0/G1 tolerance. Default is geom2d.const.EPSILON.
-
-    Returns:
-        True if the two segments have G1 continuity within the
-        specified tolerance. Otherwise False.
+        scale: Multiplier applied before formatting (for unit conversion).
+        precision: Digits after the decimal point. Defaults to the precision
+            that ``EPSILON`` resolves.
     """
-    if tolerance is None:
-        tolerance = const.EPSILON
-    # G0 continuity - end points are connected
-    if point.almost_equal(seg1.p2, seg2.p1, tolerance):
-        # G1 continuity -> G0 + segment end points share tangent
-        # td = seg1.end_tangent_angle() - seg2.start_tangent_angle()
-        # return abs(td) < tolerance
-        angle_tolerance = tolerance * 10
-        return const.float_eq(
-            seg1.end_tangent_angle(),
-            seg2.start_tangent_angle(),
-            tolerance=angle_tolerance,
-        )
-    return False
+    if precision is None:
+        precision = const.EPSILON_PRECISION
+    return _formatter(float(scale), int(precision))
